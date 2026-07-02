@@ -1,0 +1,6 @@
+[submodule "thirdparty/git"]
+	path = thirdparty/git
+	url = https://github.com/DavidKinder/Git.git
+[submodule "thirdparty/glulxe-reference"]
+	path = thirdparty/glulxe-reference
+	url = https://github.com/erkyrath/glulxe.git
