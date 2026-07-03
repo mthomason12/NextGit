@@ -7,6 +7,12 @@
  *   - glk_select() with no pending request (returns evtype_None)
  *   - glk_select() with line request pending (reads from stdin)
  *   - Line length reporting in event
+ *   - gli_register_arr() called on request
+ *   - gli_unregister_arr() called on select completion
+ *   - gli_unregister_arr() called on cancel
+ *   - linebuf/linebuflen cleared after completion
+ *   - linebuf/linebuflen cleared after cancel
+ *   - Retained array lifecycle (inarrayrock stored, passed to unregister)
  *
  * Note: Tests that require stdin interaction use a temporary pipe to
  * simulate user input.
@@ -90,6 +96,59 @@ static int pipe_input_to_stdin(const char *input)
     close(pd[0]);
 
     return 0;
+}
+
+/* -------------------------------------------------------------------------
+ * Mock retained-array registry for testing
+ *
+ * These track calls to gli_register_arr and gli_unregister_arr so tests
+ * can verify the retained-array lifecycle.
+ * ------------------------------------------------------------------------- */
+
+static int mock_reg_called = 0;
+static int mock_unreg_called = 0;
+static void *mock_reg_array = NULL;
+static glui32 mock_reg_len = 0;
+static char *mock_reg_typecode = NULL;
+static gidispatch_rock_t mock_reg_rock;
+static void *mock_unreg_array = NULL;
+static glui32 mock_unreg_len = 0;
+static char *mock_unreg_typecode = NULL;
+static gidispatch_rock_t mock_unreg_rock;
+
+static gidispatch_rock_t mock_register_arr(void *array, glui32 len,
+    char *typecode)
+{
+    mock_reg_called++;
+    mock_reg_array = array;
+    mock_reg_len = len;
+    mock_reg_typecode = typecode;
+    mock_reg_rock.num = 0xDEADBEEF;  /* distinctive test value */
+    return mock_reg_rock;
+}
+
+static void mock_unregister_arr(void *array, glui32 len, char *typecode,
+    gidispatch_rock_t objrock)
+{
+    mock_unreg_called++;
+    mock_unreg_array = array;
+    mock_unreg_len = len;
+    mock_unreg_typecode = typecode;
+    mock_unreg_rock = objrock;
+}
+
+static void mock_reset(void)
+{
+    mock_reg_called = 0;
+    mock_unreg_called = 0;
+    mock_reg_array = NULL;
+    mock_reg_len = 0;
+    mock_reg_typecode = NULL;
+    mock_reg_rock.num = 0;
+    mock_unreg_array = NULL;
+    mock_unreg_len = 0;
+    mock_unreg_typecode = NULL;
+    mock_unreg_rock.num = 0;
 }
 
 /* -------------------------------------------------------------------------
@@ -375,6 +434,302 @@ static int test_request_null_window(void)
 }
 
 /* -------------------------------------------------------------------------
+ * Test: gli_register_arr() called on request
+ * ------------------------------------------------------------------------- */
+
+static int test_register_arr_called(void)
+{
+    window_t *win = create_test_window();
+    if (!win) {
+        printf("  FAIL: test_register_arr_called (setup failed)\n");
+        return 1;
+    }
+
+    char buf[256];
+
+    /* Install mock retained-array registry */
+    gli_register_arr = mock_register_arr;
+    gli_unregister_arr = mock_unregister_arr;
+    mock_reset();
+
+    /* Request line input */
+    glk_request_line_event((winid_t)win, buf, sizeof(buf), 0);
+
+    /* Verify gli_register_arr was called */
+    TEST_ASSERT(mock_reg_called == 1, "gli_register_arr called once");
+    TEST_ASSERT(mock_reg_array == (void *)buf, "gli_register_arr passed correct buffer");
+    TEST_ASSERT(mock_reg_len == sizeof(buf), "gli_register_arr passed correct length");
+    TEST_ASSERT(mock_reg_typecode != NULL, "gli_register_arr typecode not NULL");
+    TEST_ASSERT(strcmp(mock_reg_typecode, "&+#!Cn") == 0,
+        "gli_register_arr typecode is '&+#!Cn'");
+
+    /* Verify inarrayrock was stored */
+    TEST_ASSERT(win->inarrayrock.num == 0xDEADBEEF,
+        "inarrayrock stored from gli_register_arr return value");
+
+    /* Restore NULL callbacks */
+    gli_register_arr = NULL;
+    gli_unregister_arr = NULL;
+
+    destroy_test_window(win);
+    return 0;
+}
+
+/* -------------------------------------------------------------------------
+ * Test: gli_unregister_arr() called on select completion
+ * ------------------------------------------------------------------------- */
+
+static int test_unregister_arr_on_select(void)
+{
+    window_t *win = create_test_window();
+    if (!win) {
+        printf("  FAIL: test_unregister_arr_on_select (setup failed)\n");
+        return 1;
+    }
+
+    event_t ev;
+    char buf[256];
+    const char *test_input = "world\n";
+
+    /* Install mock retained-array registry */
+    gli_register_arr = mock_register_arr;
+    gli_unregister_arr = mock_unregister_arr;
+    mock_reset();
+
+    /* Request line input (this calls gli_register_arr) */
+    glk_request_line_event((winid_t)win, buf, sizeof(buf), 0);
+    TEST_ASSERT(mock_reg_called == 1, "gli_register_arr called on request");
+
+    /* Pipe test input to stdin */
+    if (pipe_input_to_stdin(test_input) != 0) {
+        printf("  FAIL: test_unregister_arr_on_select (pipe setup failed)\n");
+        gli_register_arr = NULL;
+        gli_unregister_arr = NULL;
+        destroy_test_window(win);
+        return 1;
+    }
+
+    /* Select reads input and should call gli_unregister_arr */
+    glk_select(&ev);
+
+    /* Verify gli_unregister_arr was called */
+    TEST_ASSERT(mock_unreg_called == 1, "gli_unregister_arr called once");
+    TEST_ASSERT(mock_unreg_array == (void *)buf,
+        "gli_unregister_arr passed correct buffer");
+    TEST_ASSERT(mock_unreg_len == sizeof(buf),
+        "gli_unregister_arr passed correct length");
+    TEST_ASSERT(mock_unreg_typecode != NULL,
+        "gli_unregister_arr typecode not NULL");
+    TEST_ASSERT(strcmp(mock_unreg_typecode, "&+#!Cn") == 0,
+        "gli_unregister_arr typecode is '&+#!Cn'");
+
+    /* Verify the rock passed to unregister matches the one from register */
+    TEST_ASSERT(mock_unreg_rock.num == 0xDEADBEEF,
+        "gli_unregister_arr receives correct inarrayrock");
+
+    /* Restore NULL callbacks */
+    gli_register_arr = NULL;
+    gli_unregister_arr = NULL;
+
+    destroy_test_window(win);
+    return 0;
+}
+
+/* -------------------------------------------------------------------------
+ * Test: gli_unregister_arr() called on cancel
+ * ------------------------------------------------------------------------- */
+
+static int test_unregister_arr_on_cancel(void)
+{
+    window_t *win = create_test_window();
+    if (!win) {
+        printf("  FAIL: test_unregister_arr_on_cancel (setup failed)\n");
+        return 1;
+    }
+
+    char buf[256];
+
+    /* Install mock retained-array registry */
+    gli_register_arr = mock_register_arr;
+    gli_unregister_arr = mock_unregister_arr;
+    mock_reset();
+
+    /* Request line input (this calls gli_register_arr) */
+    glk_request_line_event((winid_t)win, buf, sizeof(buf), 0);
+    TEST_ASSERT(mock_reg_called == 1, "gli_register_arr called on request");
+
+    /* Cancel the request (should call gli_unregister_arr) */
+    glk_cancel_line_event((winid_t)win, NULL);
+
+    /* Verify gli_unregister_arr was called */
+    TEST_ASSERT(mock_unreg_called == 1, "gli_unregister_arr called once on cancel");
+    TEST_ASSERT(mock_unreg_array == (void *)buf,
+        "gli_unregister_arr passed correct buffer on cancel");
+    TEST_ASSERT(mock_unreg_len == sizeof(buf),
+        "gli_unregister_arr passed correct length on cancel");
+    TEST_ASSERT(mock_unreg_typecode != NULL,
+        "gli_unregister_arr typecode not NULL on cancel");
+    TEST_ASSERT(strcmp(mock_unreg_typecode, "&+#!Cn") == 0,
+        "gli_unregister_arr typecode is '&+#!Cn' on cancel");
+
+    /* Verify the rock passed to unregister matches the one from register */
+    TEST_ASSERT(mock_unreg_rock.num == 0xDEADBEEF,
+        "gli_unregister_arr receives correct inarrayrock on cancel");
+
+    /* Restore NULL callbacks */
+    gli_register_arr = NULL;
+    gli_unregister_arr = NULL;
+
+    destroy_test_window(win);
+    return 0;
+}
+
+/* -------------------------------------------------------------------------
+ * Test: linebuf cleared after select completion
+ * ------------------------------------------------------------------------- */
+
+static int test_linebuf_cleared_after_select(void)
+{
+    window_t *win = create_test_window();
+    if (!win) {
+        printf("  FAIL: test_linebuf_cleared_after_select (setup failed)\n");
+        return 1;
+    }
+
+    event_t ev;
+    char buf[256];
+
+    /* Install mock retained-array registry */
+    gli_register_arr = mock_register_arr;
+    gli_unregister_arr = mock_unregister_arr;
+    mock_reset();
+
+    /* Request line input */
+    glk_request_line_event((winid_t)win, buf, sizeof(buf), 0);
+    TEST_ASSERT(win->linebuf == (void *)buf, "linebuf set after request");
+    TEST_ASSERT(win->linebuflen == sizeof(buf), "linebuflen set after request");
+
+    /* Pipe test input to stdin */
+    if (pipe_input_to_stdin("test\n") != 0) {
+        printf("  FAIL: test_linebuf_cleared_after_select (pipe setup failed)\n");
+        gli_register_arr = NULL;
+        gli_unregister_arr = NULL;
+        destroy_test_window(win);
+        return 1;
+    }
+
+    glk_select(&ev);
+
+    /* Verify linebuf and linebuflen are cleared */
+    TEST_ASSERT(win->linebuf == NULL, "linebuf cleared to NULL after select");
+    TEST_ASSERT(win->linebuflen == 0, "linebuflen cleared to 0 after select");
+
+    /* Restore NULL callbacks */
+    gli_register_arr = NULL;
+    gli_unregister_arr = NULL;
+
+    destroy_test_window(win);
+    return 0;
+}
+
+/* -------------------------------------------------------------------------
+ * Test: linebuf cleared after cancel
+ * ------------------------------------------------------------------------- */
+
+static int test_linebuf_cleared_after_cancel(void)
+{
+    window_t *win = create_test_window();
+    if (!win) {
+        printf("  FAIL: test_linebuf_cleared_after_cancel (setup failed)\n");
+        return 1;
+    }
+
+    char buf[256];
+
+    /* Install mock retained-array registry */
+    gli_register_arr = mock_register_arr;
+    gli_unregister_arr = mock_unregister_arr;
+    mock_reset();
+
+    /* Request line input */
+    glk_request_line_event((winid_t)win, buf, sizeof(buf), 0);
+    TEST_ASSERT(win->linebuf == (void *)buf, "linebuf set after request");
+    TEST_ASSERT(win->linebuflen == sizeof(buf), "linebuflen set after request");
+
+    /* Cancel the request */
+    glk_cancel_line_event((winid_t)win, NULL);
+
+    /* Verify linebuf and linebuflen are cleared */
+    TEST_ASSERT(win->linebuf == NULL, "linebuf cleared to NULL after cancel");
+    TEST_ASSERT(win->linebuflen == 0, "linebuflen cleared to 0 after cancel");
+
+    /* Restore NULL callbacks */
+    gli_register_arr = NULL;
+    gli_unregister_arr = NULL;
+
+    destroy_test_window(win);
+    return 0;
+}
+
+/* -------------------------------------------------------------------------
+ * Test: Retained array survives across request/select cycle
+ *
+ * Verifies that the same buffer pointer and rock value are used across
+ * the full request -> select -> unregister lifecycle.
+ * ------------------------------------------------------------------------- */
+
+static int test_retained_array_lifecycle(void)
+{
+    window_t *win = create_test_window();
+    if (!win) {
+        printf("  FAIL: test_retained_array_lifecycle (setup failed)\n");
+        return 1;
+    }
+
+    event_t ev;
+    char buf[256];
+
+    /* Install mock retained-array registry */
+    gli_register_arr = mock_register_arr;
+    gli_unregister_arr = mock_unregister_arr;
+    mock_reset();
+
+    /* Request line input — this registers the array */
+    glk_request_line_event((winid_t)win, buf, sizeof(buf), 0);
+    TEST_ASSERT(mock_reg_called == 1, "register called on request");
+    TEST_ASSERT(mock_reg_array == (void *)buf, "register passed correct buffer");
+    TEST_ASSERT(win->inarrayrock.num == 0xDEADBEEF, "inarrayrock stored");
+
+    /* Pipe test input to stdin */
+    if (pipe_input_to_stdin("retained\n") != 0) {
+        printf("  FAIL: test_retained_array_lifecycle (pipe setup failed)\n");
+        gli_register_arr = NULL;
+        gli_unregister_arr = NULL;
+        destroy_test_window(win);
+        return 1;
+    }
+
+    /* Select reads input — this unregisters the array */
+    glk_select(&ev);
+
+    /* Verify unregister received the same buffer and rock */
+    TEST_ASSERT(mock_unreg_called == 1, "unregister called on select");
+    TEST_ASSERT(mock_unreg_array == (void *)buf,
+        "unregister passed same buffer as register");
+    TEST_ASSERT(mock_unreg_len == sizeof(buf),
+        "unregister passed same length as register");
+    TEST_ASSERT(mock_unreg_rock.num == 0xDEADBEEF,
+        "unregister received same rock as register returned");
+
+    /* Restore NULL callbacks */
+    gli_register_arr = NULL;
+    gli_unregister_arr = NULL;
+
+    destroy_test_window(win);
+    return 0;
+}
+
+/* -------------------------------------------------------------------------
  * Run all input tests
  * ------------------------------------------------------------------------- */
 
@@ -401,6 +756,18 @@ int input_tests_run(void)
     failures += test_select_null_event();
     failures += test_cancel_null_window();
     failures += test_request_null_window();
+
+    printf("  --- Retained Array Registration ---\n");
+    failures += test_register_arr_called();
+    failures += test_unregister_arr_on_select();
+    failures += test_unregister_arr_on_cancel();
+
+    printf("  --- Buffer Cleanup ---\n");
+    failures += test_linebuf_cleared_after_select();
+    failures += test_linebuf_cleared_after_cancel();
+
+    printf("  --- Retained Array Lifecycle ---\n");
+    failures += test_retained_array_lifecycle();
 
     return failures;
 }

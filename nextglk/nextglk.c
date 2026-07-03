@@ -300,8 +300,17 @@ void glk_select(event_t *event)
         event->val1 = (glui32)len;
         event->val2 = 0;
 
-        /* Clear the pending request */
+        /* Unregister the array with the dispatch layer so it writes
+         * the input back to VM memory and frees the retained copy. */
+        if (gli_unregister_arr) {
+            (*gli_unregister_arr)(win->linebuf, win->linebuflen,
+                "&+#!Cn", win->inarrayrock);
+        }
+
+        /* Clear the pending request and release the buffer reference */
         win->line_request = 0;
+        win->linebuf = NULL;
+        win->linebuflen = 0;
         return;
     }
 
@@ -743,6 +752,12 @@ void glk_request_line_event(winid_t win, char *buf, glui32 maxlen,
     winptr->line_request = 1;
 
     (void)initlen;  /* Pre-filled content not supported in Phase 2 */
+
+    /* Register the array with the dispatch layer so it persists
+     * across glk_select() and gets written back to VM memory. */
+    if (gli_register_arr) {
+        winptr->inarrayrock = (*gli_register_arr)(buf, maxlen, "&+#!Cn");
+    }
 }
 
 /* -------------------------------------------------------------------------
@@ -764,7 +779,19 @@ void glk_cancel_line_event(winid_t win, event_t *event)
     if (!winptr)
         return;
 
-    winptr->line_request = 0;
+    if (winptr->line_request) {
+        /* Unregister the array with the dispatch layer so it writes
+         * the current buffer content back to VM memory and frees the
+         * retained copy. */
+        if (gli_unregister_arr) {
+            (*gli_unregister_arr)(winptr->linebuf, winptr->linebuflen,
+                "&+#!Cn", winptr->inarrayrock);
+        }
+
+        winptr->line_request = 0;
+        winptr->linebuf = NULL;
+        winptr->linebuflen = 0;
+    }
 
     if (event) {
         event->type = evtype_LineInput;

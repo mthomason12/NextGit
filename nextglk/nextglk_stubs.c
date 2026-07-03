@@ -55,15 +55,18 @@ giblorb_map_t *giblorb_get_resource_map(void)
  * gidispatch_set_retained_registry (always needed, see §3b)
  * ===================================================================== */
 
+gidispatch_rock_t (*gli_register_arr)(void *array, glui32 len,
+    char *typecode) = NULL;
+void (*gli_unregister_arr)(void *array, glui32 len, char *typecode,
+    gidispatch_rock_t objrock) = NULL;
+
 void gidispatch_set_retained_registry(
     gidispatch_rock_t (*regi)(void *array, glui32 len, char *typecode),
     void (*unregi)(void *array, glui32 len, char *typecode,
         gidispatch_rock_t objrock))
 {
-    (void)regi;
-    (void)unregi;
-
-    /* Stub — no retained array tracking. */
+    gli_register_arr = regi;
+    gli_unregister_arr = unregi;
 }
 
 /* =====================================================================

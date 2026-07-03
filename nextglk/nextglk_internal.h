@@ -104,12 +104,18 @@ extern fileref_t *gli_filereflist;
  * Dispatch-layer registration callbacks
  *
  * These function pointers are set by the Git VM via
- * gidispatch_set_object_registry() during startup.
- * They may be NULL before the VM initialises the dispatch layer.
+ * gidispatch_set_object_registry() and gidispatch_set_retained_registry()
+ * during startup.  They may be NULL before the VM initialises the
+ * dispatch layer.
  * ------------------------------------------------------------------------- */
 
 extern gidispatch_rock_t (*gli_register_obj)(void *obj, glui32 objclass);
 extern void (*gli_unregister_obj)(void *obj, glui32 objclass,
+    gidispatch_rock_t objrock);
+
+extern gidispatch_rock_t (*gli_register_arr)(void *array, glui32 len,
+    char *typecode);
+extern void (*gli_unregister_arr)(void *array, glui32 len, char *typecode,
     gidispatch_rock_t objrock);
 
 /* -------------------------------------------------------------------------
