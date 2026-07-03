@@ -282,3 +282,72 @@ Each note must include:
 The portability notes document is an observation log, not a task list.
 
 Do not rewrite working functionality solely for 8-bit compatibility unless explicitly requested.
+
+## Spectrum Next Memory Budget
+
+The Linux build is the reference implementation.
+
+However, all new features should record potential memory impacts.
+
+When evaluating a feature, consider:
+
+- VM memory usage
+- Game object counts
+- Save file buffers
+- Transcript buffers
+- Image cache usage
+- Resource loading behaviour
+
+Large Inform 7 games may contain:
+
+- Thousands of objects
+- Large dictionaries
+- Large parser tables
+- Large text resources
+
+The Spectrum Next target has a practical memory budget of approximately 1.7 MB.
+
+Do not optimise prematurely.
+
+However:
+
+Whenever a subsystem could significantly increase memory usage, create an entry in:
+
+    docs/8bit-portability-notes.md
+
+including:
+
+- subsystem
+- estimated memory impact
+- current Linux behaviour
+- likely Spectrum Next concern
+- possible future mitigation
+
+## 8-bit Portability Tracking
+
+For all code generated:
+
+Add entries to:
+
+    docs/8bit-portability-notes.md
+
+when implementation introduces:
+
+- malloc/free usage
+- large stack buffers
+- FILE* assumptions
+- fseek/ftell assumptions
+- path handling assumptions
+- filename length assumptions
+- host OS dependencies
+
+Record:
+
+- location
+- concern
+- Linux implementation
+- likely Spectrum Next impact
+- potential future mitigation
+
+Do not redesign working code solely for portability.
+Record concerns first.
