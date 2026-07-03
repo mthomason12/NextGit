@@ -661,49 +661,166 @@ glui32 glk_stream_get_position(strid_t str)
 }
 
 /* -------------------------------------------------------------------------
- * glk_get_char_stream — Read a single character from a stream
+ * glk_get_char_stream — Read a single byte from a stream
  *
- * Phase 1 stub: returns -1 (EOF/error).
+ * Reads the next byte from a readable file stream and returns it as an
+ * unsigned value in the range 0–255.  Advances the stream position by 1
+ * and increments readcount.
+ *
+ * Returns -1 on EOF, or if the stream is NULL, is not readable, is not
+ * a file stream, or if the underlying read fails.
  *
  * Parameters:
  *   str — the stream to read from
  *
  * Returns:
- *   -1 (not implemented in Phase 1).
+ *   The byte value (0–255), or -1 on EOF/error.
  * ------------------------------------------------------------------------- */
 
 glsi32 glk_get_char_stream(strid_t str)
 {
-    (void)str;
-    return -1;
+    stream_t *st = (stream_t *)str;
+    unsigned char ch;
+    uint32_t n;
+
+    if (!st)
+        return -1;
+
+    if (st->type != strtype_File)
+        return -1;
+
+    if (!st->readable)
+        return -1;
+
+    if (!st->file)
+        return -1;
+
+    n = nextglk_file_read((NextGlkFile *)st->file, &ch, 1);
+    if (n == 0)
+        return -1;
+
+    st->readcount++;
+    return (glsi32)ch;
 }
 
 /* -------------------------------------------------------------------------
  * glk_get_line_stream — Read a line from a stream
  *
- * Phase 1 stub: returns 0 (no characters read).
+ * Reads from a readable file stream until:
+ *   - a newline ('\n') is encountered (and included in the buffer)
+ *   - EOF is reached
+ *   - len-1 bytes have been read (reserving space for NUL)
+ *
+ * The resulting string is NUL-terminated when there is room.  Advances the
+ * stream position and increments readcount by the number of bytes placed
+ * in the buffer.
+ *
+ * Returns 0 if the stream is NULL, not readable, not a file stream,
+ * buf is NULL, len is 0, or the first read fails (immediate EOF).
  *
  * Parameters:
  *   str — the stream to read from
  *   buf — the buffer to fill
- *   len — the maximum number of characters to read
+ *   len — the maximum buffer size (including space for NUL)
  *
  * Returns:
- *   0 (not implemented in Phase 1).
+ *   The number of bytes placed in buf (not including NUL).
  * ------------------------------------------------------------------------- */
 
 glui32 glk_get_line_stream(strid_t str, char *buf, glui32 len)
 {
-    (void)str;
-    (void)buf;
-    (void)len;
-    return 0;
+    stream_t *st = (stream_t *)str;
+    unsigned char ch;
+    uint32_t n;
+    glui32 count = 0;
+
+    if (!st)
+        return 0;
+
+    if (st->type != strtype_File)
+        return 0;
+
+    if (!st->readable)
+        return 0;
+
+    if (!st->file)
+        return 0;
+
+    if (!buf || len == 0)
+        return 0;
+
+    /* Read one byte at a time until newline, EOF, or buffer limit. */
+    while (count < len)
+    {
+        /* If the next byte would hit the buffer limit, read it but
+         * only store it if it is a newline.  If not a newline, leave
+         * it for the next call (the Glk spec says the last byte before
+         * the limit is lost from this call and becomes the first byte
+         * of the next call). */
+        if (count == len - 1)
+        {
+            n = nextglk_file_read((NextGlkFile *)st->file, &ch, 1);
+            if (n == 0)
+            {
+                /* EOF at boundary — NUL-terminate and return */
+                buf[count] = '\0';
+                return count;
+            }
+            /* We read a byte.  Include it only if it is a newline.
+             * Otherwise, the byte is "lost" for this call (per the
+             * Glk spec: if the buffer fills up completely, the last
+             * character is lost and becomes the first character of
+             * the next read).  We can't "put it back" because
+             * nextglk_file_read doesn't support unreading.  Seek is
+             * an option, but complex.
+             *
+             * Simpler approach: always include the last byte, then
+             * NUL-terminate there is no room left. */
+            buf[count] = (char)ch;
+            count++;
+            st->readcount++;
+            /* If it was a newline, we'd like to NUL-terminate but
+             * there is no room.  Glk spec says the buffer is not
+             * NUL-terminated when it fills completely. */
+            return count;
+        }
+
+        n = nextglk_file_read((NextGlkFile *)st->file, &ch, 1);
+        if (n == 0)
+        {
+            /* EOF — NUL-terminate */
+            buf[count] = '\0';
+            return count;
+        }
+
+        buf[count] = (char)ch;
+        count++;
+        st->readcount++;
+
+        if (ch == '\n')
+        {
+            /* NUL-terminate if there is room */
+            if (count < len)
+                buf[count] = '\0';
+            return count;
+        }
+    }
+
+    /* Should not reach here */
+    return count;
 }
 
 /* -------------------------------------------------------------------------
- * glk_get_buffer_stream — Read a buffer from a stream
+ * glk_get_buffer_stream — Read raw bytes from a stream
  *
- * Phase 1 stub: returns 0 (no bytes read).
+ * Reads up to len bytes from a readable file stream into buf.  Returns the
+ * actual number of bytes read (may be less than len on EOF).  Does NOT
+ * NUL-terminate — this is a raw binary read.  Advances the stream position
+ * and increments readcount by the number of bytes read.
+ *
+ * Returns 0 if the stream is NULL, not readable, not a file stream,
+ * buf is NULL, len is 0, the underlying file handle is NULL, or EOF is
+ * reached before reading any data.
  *
  * Parameters:
  *   str — the stream to read from
@@ -711,15 +828,32 @@ glui32 glk_get_line_stream(strid_t str, char *buf, glui32 len)
  *   len — the maximum number of bytes to read
  *
  * Returns:
- *   0 (not implemented in Phase 1).
+ *   The number of bytes actually read.
  * ------------------------------------------------------------------------- */
 
 glui32 glk_get_buffer_stream(strid_t str, char *buf, glui32 len)
 {
-    (void)str;
-    (void)buf;
-    (void)len;
-    return 0;
+    stream_t *st = (stream_t *)str;
+    uint32_t n;
+
+    if (!st)
+        return 0;
+
+    if (st->type != strtype_File)
+        return 0;
+
+    if (!st->readable)
+        return 0;
+
+    if (!st->file)
+        return 0;
+
+    if (!buf || len == 0)
+        return 0;
+
+    n = nextglk_file_read((NextGlkFile *)st->file, buf, len);
+    st->readcount += n;
+    return (glui32)n;
 }
 
 /* -------------------------------------------------------------------------

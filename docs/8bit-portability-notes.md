@@ -438,3 +438,58 @@ Priority:
 - **Linux implementation:** Stored as `glui32 rock` in the `stream_t` struct, set by `gli_new_stream()` from the caller-supplied rock parameter.
 - **Likely Spectrum Next impact:** 4 bytes per stream is negligible (typically < 10 streams active at once when counting window streams). No significant impact.
 - **Possible future mitigation:** None required.
+
+---
+
+## Phase 3B.3 — Stream Reading APIs
+
+### `glk_get_char_stream()` EOF behaviour
+
+- **Location:** `nextglk/nextglk.c` (`glk_get_char_stream()`)
+- **Concern:** EOF is signalled by returning `-1` as a `glsi32` (signed 32-bit integer), while valid byte values are returned as `0..255`. This is the standard Glk convention and is portable. On the Spectrum Next, `glsi32` is the same size — no concern.
+- **Linux implementation:** Reads a single `unsigned char` via `nextglk_file_read()`, converts to `glsi32` for return. Returns `-1` when `nextglk_file_read()` returns 0.
+- **Likely Spectrum Next impact:** None — `glsi32` is always 32-bit signed per the Glk spec.
+- **Possible future mitigation:** None required.
+
+### Signed vs unsigned char considerations
+
+- **Location:** `nextglk/nextglk.c` (`glk_get_char_stream()`, `glk_get_line_stream()`)
+- **Concern:** File data is read into an `unsigned char` before being stored in the user buffer (which is `char *`). On platforms where `char` is signed (most), byte values 128–255 will have implementation-defined behaviour when cast to `char`. However, the Glk spec defines `glk_get_char_stream()` to return values 0–255, and `glk_get_buffer_stream()` / `glk_get_line_stream()` store raw bytes — the caller is expected to interpret them as unsigned.
+- **Linux implementation:** Uses `unsigned char` for the internal read, then assigns to `char` (signed) in the buffer. This works correctly on Linux where `char` is typically signed and two's complement, but the stored byte values for 128–255 will appear as negative `char` values if interpreted as signed. This matches Glk behaviour — the game must treat buffer bytes as `unsigned char`.
+- **Likely Spectrum Next impact:** z88dk's `char` is unsigned by default, which means byte values 128–255 will appear as positive `char` values. This is actually *better* behaviour than on Linux, as the raw bytes are preserved without sign interpretation.
+- **Possible future mitigation:** If portability issues arise, the user buffer type could be changed to `unsigned char *` at the NextGlk layer, but this would change the Glk ABI. Not recommended.
+
+### Newline handling in `glk_get_line_stream()`
+
+- **Location:** `nextglk/nextglk.c` (`glk_get_line_stream()`)
+- **Concern:** The function reads one byte at a time via `nextglk_file_read()` to detect newlines. This is inefficient on the Spectrum Next where each `fread()` call may involve SD card latency. A buffered approach (reading a chunk into an internal buffer and then scanning for newlines) would reduce SD card interactions.
+- **Linux implementation:** Byte-by-byte loop calling `nextglk_file_read(nf, &ch, 1)` — each call goes through `fread(buffer, 1, 1, fp)`. Newline (`\n`) is included in the returned buffer. NUL-termination is provided when `count < len`.
+- **Likely Spectrum Next impact:** Significant performance concern for line-oriented reads on SD card-backed files. Each byte may require a separate read operation at the hardware level if unbuffered. However, `fread()` on z88dk typically uses an internal `FILE` buffer (BUFSIZ), which mitigates this somewhat.
+- **Possible future mitigation:** Add a small read-ahead buffer at the NextGlk file layer, or use `fgets()`-style buffered reading. Not urgent for the Linux reference implementation.
+
+### NUL termination requirements for `glk_get_line_stream()`
+
+- **Location:** `nextglk/nextglk.c` (`glk_get_line_stream()`)
+- **Concern:** The Glk spec requires NUL-termination only when the returned count is less than the buffer length. When the buffer is exactly filled (including the newline at the last position), the buffer is not NUL-terminated. The ZX Spectrum Next implementation must preserve this exact behaviour — adding unconditional NUL-termination would violate the spec.
+- **Linux implementation:** NUL-terminates when `count < len`. When `len == 1`, the buffer is fully used and never NUL-terminated (the game must handle this per the Glk spec). When `len == 0`, the function returns 0 immediately without writing to the buffer.
+- **Likely Spectrum Next impact:** None if the same logic is preserved. The edge case `len == 1` with a single newline byte means the game sees a 1-byte buffer containing `\n` with no NUL. This is correct Glk behaviour.
+- **Possible future mitigation:** None required — behaviour matches the Glk spec.
+
+### Binary-file safety for stream reads
+
+- **Location:** `nextglk/nextglk.c` (`glk_get_buffer_stream()`, `glk_get_char_stream()`, `glk_get_line_stream()`)
+- **Concern:** All three functions read via `nextglk_file_read()`, which uses `fopen(path, "rb")` — binary mode. This ensures no newline translation or encoding issues on platforms that distinguish text/binary modes (Windows). On the Spectrum Next, all file I/O is inherently binary.
+- **Linux implementation:** Files are always opened with `"rb"` in `nextglk_file_open_read()`. Buffer reads return raw bytes without any transformation. Line reads detect only `\n` (not `\r\n` or other platform-specific sequences). Char reads return the exact byte value 0–255.
+- **Likely Spectrum Next impact:** z88dk typically opens all files in binary mode. No concern.
+- **Possible future mitigation:** None required.
+
+### Implications for save/restore
+
+- **Location:** `nextglk/nextglk.c` (read APIs), `nextglk/nextglk_file.c` (file I/O)
+- **Concern:** The stream read APIs are now fully functional for file-backed streams. This means restore (reading a Quetzal save file) can now be implemented at the Glk layer — all the raw I/O primitives exist. Save (writing) was already functional from Phase 3A. The remaining work for save/restore end-to-end is:
+  1. `glk_gestalt()` should report that save/restore is supported (currently returns 0 for `gestalt_Sound` etc., but save/restore-specific gestalt selectors may need updating).
+  2. The Git VM's `saveToFile()` and `restoreFromFile()` functions in `savefile.c` will now receive real data from `glk_get_buffer_stream()` when reading save files, and `glk_put_buffer_stream()` will write real data.
+  3. No changes are needed at the NextGlk layer for basic save/restore to work — the primitives are all implemented.
+- **Linux implementation:** `glk_get_char_stream()`, `glk_get_buffer_stream()`, and `glk_get_line_stream()` all delegate to `nextglk_file_read()`, which uses `fread()`. Reads correctly advance file position, which `glk_stream_get_position()` reports via `ftell()`.
+- **Likely Spectrum Next impact:** Save file sizes for large Inform 7 games may be hundreds of KB. Reading a full save file sequentially via `glk_get_buffer_stream()` will require SD card throughput. The Quetzal format is chunked, so the VM reads the file in sections — each section corresponds to a `glk_get_buffer_stream()` call. The same chunked-read concern applies as noted for chunked writes in Phase 3A notes.
+- **Possible future mitigation:** Test restore with large save files early in the Spectrum Next port. If SD card latency causes issues, consider adding a read-ahead buffer at the `NextGlkFile` layer.

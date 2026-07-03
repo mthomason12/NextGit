@@ -10,9 +10,23 @@ struct NextGlkFile
 NextGlkFile* nextglk_file_open_read(
     const char* path)
 {
-    (void)path;
+    NextGlkFile* nf;
 
-    return 0;
+    if (!path)
+        return NULL;
+
+    nf = malloc(sizeof(*nf));
+    if (!nf)
+        return NULL;
+
+    nf->fp = fopen(path, "rb");
+    if (!nf->fp)
+    {
+        free(nf);
+        return NULL;
+    }
+
+    return nf;
 }
 
 NextGlkFile* nextglk_file_open_write(
@@ -64,11 +78,16 @@ uint32_t nextglk_file_read(
     void* buffer,
     uint32_t length)
 {
-    (void)file;
-    (void)buffer;
-    (void)length;
+    size_t n;
 
-    return 0;
+    if (!file || !file->fp || !buffer)
+        return 0;
+
+    if (length == 0)
+        return 0;
+
+    n = fread(buffer, 1, length, file->fp);
+    return (uint32_t)n;
 }
 
 uint32_t nextglk_file_write(

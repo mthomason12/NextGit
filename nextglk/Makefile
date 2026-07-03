@@ -64,7 +64,7 @@ test_all: libnextglk.a
 		../tests/stream_tests.c ../tests/window_tests.c \
 		../tests/dispatch_tests.c ../tests/stream_output_tests.c \
 		../tests/glk_output_tests.c ../tests/input_tests.c \
-		../tests/fileio_tests.c \
+		../tests/fileio_tests.c ../tests/stream_read_tests.c \
 		-L. -lnextglk -lm
 	./test_all
 
