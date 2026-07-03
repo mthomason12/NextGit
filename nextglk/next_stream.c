@@ -8,17 +8,6 @@ stream_t *gli_streamlist = NULL;
 stream_t *gli_currentstr = NULL;
 
 /* -------------------------------------------------------------------------
- * Dispatch-layer registration callbacks
- *
- * Set by the Git VM via gidispatch_set_object_registry() during startup.
- * May be NULL before the VM initialises the dispatch layer.
- * ------------------------------------------------------------------------- */
-
-gidispatch_rock_t (*gli_register_obj)(void *obj, glui32 objclass) = NULL;
-void (*gli_unregister_obj)(void *obj, glui32 objclass,
-    gidispatch_rock_t objrock) = NULL;
-
-/* -------------------------------------------------------------------------
  * gli_new_stream — Allocate and initialise a stream
  *
  * Allocates a stream_t, initialises all fields to zero/NULL, sets the

@@ -1,6 +1,6 @@
-/* test_main.c — Test runner for NextGlk Commit 2 (Window + Stream lifecycle)
+/* test_main.c — Test runner for NextGlk Commit 3 (Dispatch wiring)
  *
- * Runs stream and window lifecycle tests, prints PASS/FAIL summary.
+ * Runs stream, window, and dispatch lifecycle tests, prints PASS/FAIL summary.
  * Returns 0 if all tests pass, non-zero on any failure.
  */
 
@@ -10,6 +10,7 @@
 /* Test suites declared in their respective .c files */
 extern int stream_tests_run(void);
 extern int window_tests_run(void);
+extern int dispatch_tests_run(void);
 
 int tests_passed = 0;
 int tests_failed = 0;
@@ -35,6 +36,16 @@ int main(void)
         return 1;
     }
     printf("Window tests: %d passed, %d failed\n", tests_passed, tests_failed);
+    tests_passed = 0;
+    tests_failed = 0;
+
+    printf("\n=== Dispatch Registration Tests ===\n");
+    result = dispatch_tests_run();
+    if (result != 0) {
+        printf("DISPATCH TESTS FAILED\n");
+        return 1;
+    }
+    printf("Dispatch tests: %d passed, %d failed\n", tests_passed, tests_failed);
 
     if (tests_failed > 0) {
         printf("\n*** SOME TESTS FAILED ***\n");

@@ -10,7 +10,8 @@ OBJS = \
 	nextglk_image.o \
 	nextglk_platform.o \
 	next_stream.o \
-	next_window.o
+	next_window.o \
+	gi_dispa.o
 
 all: libnextglk.a
 
@@ -27,11 +28,19 @@ test_window: libnextglk.a
 		../tests/window_tests.c -L. -lnextglk -lm
 	./test_window
 
+test_dispatch: libnextglk.a
+	$(CC) $(CFLAGS) -I. -o test_dispatch ../tests/test_main.c \
+		../tests/stream_tests.c ../tests/window_tests.c \
+		../tests/dispatch_tests.c \
+		-L. -lnextglk -lm
+	./test_dispatch
+
 test_all: libnextglk.a
 	$(CC) $(CFLAGS) -I. -o test_all ../tests/test_main.c \
 		../tests/stream_tests.c ../tests/window_tests.c \
+		../tests/dispatch_tests.c \
 		-L. -lnextglk -lm
 	./test_all
 
 clean:
-	rm -f *.o *.a test_stream test_window test_all
+	rm -f *.o *.a test_stream test_window test_dispatch test_all
