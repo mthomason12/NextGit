@@ -343,3 +343,89 @@ void glk_set_style_stream(strid_t str, glui32 styl)
     (void)str;
     (void)styl;
 }
+
+/* =========================================================================
+ * Commit 5 — Convenience Output Functions
+ *
+ * These functions route through the _stream variants using the current stream
+ * returned by glk_stream_get_current().
+ *
+ * See docs/phase1-implementation-plan.md for the commit specification.
+ * ========================================================================= */
+
+/* -------------------------------------------------------------------------
+ * glk_put_char — Write a single character to the current output stream
+ *
+ * If gli_currentstr is set, delegates to glk_put_char_stream().
+ * Otherwise, silently ignores the character (no current stream).
+ *
+ * Parameters:
+ *   ch — the character to write (0–255)
+ *
+ * Defined in glk.h.
+ * ------------------------------------------------------------------------- */
+
+void glk_put_char(unsigned char ch)
+{
+    strid_t str = glk_stream_get_current();
+    if (str)
+        glk_put_char_stream(str, ch);
+}
+
+/* -------------------------------------------------------------------------
+ * glk_put_string — Write a null-terminated string to the current output stream
+ *
+ * If gli_currentstr is set, delegates to glk_put_string_stream().
+ * Otherwise, silently ignores the string.
+ *
+ * Parameters:
+ *   s — the null-terminated string to write
+ *
+ * Defined in glk.h.
+ * ------------------------------------------------------------------------- */
+
+void glk_put_string(char *s)
+{
+    strid_t str = glk_stream_get_current();
+    if (str)
+        glk_put_string_stream(str, s);
+}
+
+/* -------------------------------------------------------------------------
+ * glk_put_buffer — Write a buffer of known length to the current output stream
+ *
+ * If gli_currentstr is set, delegates to glk_put_buffer_stream().
+ * Otherwise, silently ignores the buffer.
+ *
+ * Parameters:
+ *   buf — the buffer to write
+ *   len — the number of bytes to write
+ *
+ * Defined in glk.h.
+ * ------------------------------------------------------------------------- */
+
+void glk_put_buffer(char *buf, glui32 len)
+{
+    strid_t str = glk_stream_get_current();
+    if (str)
+        glk_put_buffer_stream(str, buf, len);
+}
+
+/* -------------------------------------------------------------------------
+ * glk_set_style — Set the style for subsequent output on the current stream
+ *
+ * If gli_currentstr is set, delegates to glk_set_style_stream().
+ * Otherwise, silently ignores the style change.
+ *
+ * Parameters:
+ *   styl — the style to set
+ *
+ * Defined in glk.h.
+ * ------------------------------------------------------------------------- */
+
+void glk_set_style(glui32 styl)
+{
+    strid_t str = glk_stream_get_current();
+    if (str)
+        glk_set_style_stream(str, styl);
+}

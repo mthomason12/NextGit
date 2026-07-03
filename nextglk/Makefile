@@ -39,6 +39,7 @@ test_all: libnextglk.a
 	$(CC) $(CFLAGS) -I. -o test_all ../tests/test_main.c \
 		../tests/stream_tests.c ../tests/window_tests.c \
 		../tests/dispatch_tests.c ../tests/stream_output_tests.c \
+		../tests/glk_output_tests.c \
 		-L. -lnextglk -lm
 	./test_all
 
