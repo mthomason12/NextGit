@@ -8,6 +8,15 @@ It is based on:
 - Git (Glulx interpreter)
 - A custom Glk implementation called NextGlk
 
+## Structure
+
+/docs - Documentation
+/nextglk - implementation
+/tests - tests
+/thirdparty - third party code used as references, you don't need to look here unless asked to
+
+
+
 ## Architecture
 
 Game
@@ -126,3 +135,48 @@ Prefer documentation before code.
   - winid_t
   - strid_t
   - frefid_t
+
+## Unicode Policy
+
+The Spectrum Next renderer is ASCII-only.
+
+NextGlk must expose the Unicode Glk APIs required by the ABI.
+
+Unicode support is implemented as:
+
+- Accept Unicode input values.
+- Internally store Unicode code points where required by Glk.
+- Render only ASCII characters directly.
+- Non-ASCII characters are replaced by '?' initially.
+
+Allowed implementation:
+
+    U+0000–U+007F  -> render normally
+    U+0080+        -> '?'
+
+The Unicode APIs must exist and compile.
+
+Full Unicode rendering is explicitly out of scope for the initial implementation.
+
+Do not remove Unicode APIs from the Glk ABI.
+Do not change glk.h.
+Do not remove GLK_MODULE_UNICODE.
+Prefer stub implementations over API removal.
+
+## Inform 7 Content Policy
+
+Target games are expected to be ASCII-compatible.
+
+Before implementing full Unicode support:
+
+- Verify the target game content.
+- Verify generated Inform 7 output.
+- Verify Blorb metadata.
+
+If the target game is ASCII-only:
+
+- Unicode APIs remain implemented.
+- Unicode rendering remains simplified.
+- Non-ASCII output may be replaced with '?'.
+
+Do not implement full Unicode rendering unless a real game requirement is identified.
