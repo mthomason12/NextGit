@@ -305,3 +305,79 @@ Priority:
 - **Linux implementation:** Immediate return of NULL for `filemode_Read`.
 - **Likely Spectrum Next impact:** No additional concern — the path is not yet implemented on any platform.
 - **Possible future mitigation:** Implement in Phase 3B with `nextglk_file_open_read()`.
+
+---
+
+## Phase 3A.5 — File Stream Output
+
+### writecount is glui32 (32-bit unsigned) for file stream byte counting
+
+- **Location:** `nextglk/next_stream.c`, `glk_put_char_stream()` and `glk_put_buffer_stream()` for `strtype_File`
+- **Concern:** `st->writecount` is a `glui32` (32-bit unsigned integer). For file streams, the writecount tracks the cumulative number of bytes written to the file. On Linux, a 32-bit counter wraps at 4 GB, which is not a practical limit for Glulx save files (typically under 1 MB). On the Spectrum Next, the same 4 GB limit applies, but save files are expected to be tiny (under 100 KB).
+- **Linux implementation:** `writecount` is incremented by the actual number of bytes written (returned by `nextglk_file_write()`). For single-character writes, this is 0 or 1. For buffer writes, this is the return value of `fwrite()`.
+- **Likely Spectrum Next impact:** No additional concern. 32-bit arithmetic is cheap on Z80 via z88dk's long arithmetic support. The 4 GB limit is not practical on a machine with ~1.7 MB of RAM.
+- **Possible future mitigation:** None needed.
+
+### Per-byte writecount increment in glk_put_char_stream for strtype_File
+
+- **Location:** `nextglk/next_stream.c`, `glk_put_char_stream()` `case strtype_File:`
+- **Concern:** `writecount` is incremented by the number of bytes *actually* written (`nextglk_file_write` return value), not unconditionally by 1. This means if the platform write layer returns 0 (e.g., disk full), `writecount` will not be incremented, accurately reflecting that no bytes were written. The previous implementation unconditionally incremented `writecount` at the top of the function before the switch statement, which would have incorrectly counted bytes for file streams that failed to write. The fix moved `writecount++` into each case branch for `strtype_Window` and `strtype_Memory`, while `strtype_File` uses the platform layer return value.
+- **Linux implementation:** `writecount += written` where `written` is from `nextglk_file_write()`.
+- **Likely Spectrum Next impact:** On SD card filesystems, disk-full errors are possible and should result in a `writecount` that accurately reflects actual bytes written. The current implementation handles this correctly. z88dk's `fwrite` may have different error-reporting semantics, but the return value should still reflect actual bytes written.
+- **Possible future mitigation:** None needed — the pattern of deferring to the platform layer's return value is correct on all platforms.
+
+### glk_put_buffer_stream bulk-write optimisation for strtype_File
+
+- **Location:** `nextglk/next_stream.c`, `glk_put_buffer_stream()`
+- **Concern:** For file streams, `glk_put_buffer_stream()` now calls `nextglk_file_write()` directly with the entire buffer, rather than looping through `glk_put_char_stream()` for each byte. This is an optimisation: one `fwrite()` call instead of N `fwrite()` calls for an N-byte buffer. The `writecount` is incremented by the total bytes written in a single addition, not per-byte.
+- **Linux implementation:** Single `fwrite()` call with the full buffer, significantly reducing system call overhead for large writes (e.g., save files with multi-kilobyte memory chunks).
+- **Likely Spectrum Next impact:** On NextZXOS, reducing the number of individual write operations is beneficial because SD card writes are expensive. A single bulk write is much faster than N individual byte writes. However, if z88dk's `fwrite` has a smaller maximum transfer size (e.g., due to a small internal buffer), large buffers may need to be split into smaller chunks. This is not a concern for the Linux reference implementation but should be tested on real hardware.
+- **Possible future mitigation:** If z88dk's `fwrite` has a practical transfer limit, add a chunking loop in `nextglk_file_write()` or in the platform layer. The Glk layer (`glk_put_buffer_stream`) should continue to pass the full buffer.
+
+### glk_put_string_stream delegates to glk_put_char_stream for file streams
+
+- **Location:** `nextglk/next_stream.c`, `glk_put_string_stream()`
+- **Concern:** `glk_put_string_stream()` always calls `glk_put_char_stream()` in a loop, regardless of stream type. For file streams, this means each character results in a separate `nextglk_file_write()` call (one byte at a time). This is less efficient than the bulk-write path in `glk_put_buffer_stream()`. However, `glk_put_string_stream()` is typically used for short strings (filenames, chunk IDs like "FORM", "IFZS") in the Glulx save path, not for large data blocks. Large data blocks use `glk_put_buffer_stream()`.
+- **Linux implementation:** Per-byte `fwrite()` for each character in the string.
+- **Likely Spectrum Next impact:** For short strings (4–20 bytes), the per-byte overhead is negligible. If a game writes very long strings via `glk_put_string_stream()`, performance could degrade on SD card. However, this is unlikely because the Glulx save format uses `glk_put_buffer_stream()` for bulk data and `glk_put_string_stream()` only for small metadata.
+- **Possible future mitigation:** If profiling shows `glk_put_string_stream()` is a bottleneck on the Next, it could be optimised to call `glk_put_buffer_stream()` internally for file streams (using `strlen()` to get the length). This would trade a small `strlen()` scan for N individual `fwrite()` calls.
+
+### NextGlkFile type cast in stream output functions
+
+- **Location:** `nextglk/next_stream.c`, `glk_put_char_stream()` and `glk_put_buffer_stream()`
+- **Concern:** The `st->file` pointer (declared as `void *` in `stream_t`) is cast directly to `NextGlkFile *` before being passed to `nextglk_file_write()`. There is no runtime type check ensuring that `st->file` actually points to a valid `NextGlkFile`. This is safe because only `strtype_File` streams reach this code path, and `glk_stream_open_file()` always sets `st->file` to a valid `NextGlkFile*` before returning.
+- **Linux implementation:** Direct pointer cast from `void *` to `NextGlkFile *`.
+- **Likely Spectrum Next impact:** Same casting pattern — no additional risk. If `NextGlkFile` changes to an inline struct or a different pointer type on the Next, the cast must be updated. This is a compile-time concern (the compiler will catch type mismatches).
+- **Possible future mitigation:** Consider adding a `static_assert` or compile-time check that `NextGlkFile` is a pointer-compatible type if the definition changes.
+
+### Binary data (null bytes, 0xFF) handled correctly in file stream output
+
+- **Location:** `nextglk/next_stream.c`, `glk_put_char_stream()` and `glk_put_buffer_stream()` for `strtype_File`
+- **Concern:** The previous (deferred) implementation silently ignored all writes to file streams. The new implementation passes data directly to `nextglk_file_write()`, which uses `fwrite()` in binary mode. Binary data including null bytes (`0x00`) and byte value `0xFF` are preserved correctly because the file is opened with `"wb"` (binary write) mode. `glk_put_char_stream()` casts `ch` to `unsigned char` before writing, avoiding any sign-extension issues.
+- **Linux implementation:** Binary-safe `fwrite()` via `"wb"` mode.
+- **Likely Spectrum Next impact:** On NextZXOS, binary file output must similarly preserve all byte values. If the platform layer uses a text-mode file API, null bytes or certain control characters could be mangled. Ensure the Next platform layer opens files in binary mode (if the concept exists on NextZXOS).
+- **Possible future mitigation:** When implementing the Next platform layer, verify that file writes are binary-safe (all byte values 0x00–0xFF round-trip correctly).
+
+### glk_put_char_stream no longer unconditionally increments writecount for all types
+
+- **Location:** `nextglk/next_stream.c`, `glk_put_char_stream()`
+- **Concern:** The previous implementation had `st->writecount++` at the top of `glk_put_char_stream()` before the `switch` statement, incrementing the counter even for `strtype_File` (which was a no-op). This meant that `writecount` would have reported N bytes written even though 0 bytes were actually written to a file stream. The fix moves the `writecount` increment into each `case` branch, ensuring accurate byte counts. For `strtype_File`, `writecount` is incremented by the actual number of bytes written as returned by `nextglk_file_write()`.
+- **Linux implementation:** Per-case writecount management.
+- **Likely Spectrum Next impact:** Accurate writecount is critical for the Glulx save path, which uses `glk_stream_get_position()` and `glk_stream_set_position()` to backpatch chunk sizes. If writecount were inflated, position calculations would be wrong and save files would be corrupted. The fix ensures correctness on all platforms.
+- **Possible future mitigation:** None needed — this is a correctness fix, not a platform-specific concern.
+
+### fwrite behaviour for file stream output
+
+- **Location:** `nextglk/next_stream.c` → `nextglk_file_write()` in `nextglk/nextglk_file.c`
+- **Concern:** All file stream output ultimately calls `nextglk_file_write()`, which calls `fwrite(buffer, 1, length, fp)`. The return value from `fwrite()` is the number of items (bytes) successfully written. On a full disk, this may be less than `length`. The stream layer uses this return value to increment `writecount`, so the byte count accurately reflects reality. However, if a partial write occurs mid-stream, the game may not detect the error (Glk does not have an error-reporting mechanism for individual writes — the game only sees the aggregate counts via `glk_stream_close()`).
+- **Linux implementation:** Standard glibc `fwrite()` with return value used for writecount.
+- **Likely Spectrum Next impact:** On SD card, disk-full errors are a real concern. If `fwrite()` returns fewer bytes than requested, the game's save file will be truncated and invalid. The game will detect this when it tries to restore and finds a corrupt file. This is the expected failure mode — Glk does not require individual write error reporting.
+- **Possible future mitigation:** Consider adding a flag or counter for write errors so the game can detect them. This is a Glk API design consideration, not specific to the Spectrum Next.
+
+### Large file considerations for save files
+
+- **Location:** `nextglk/next_stream.c`, all file stream output paths
+- **Concern:** The Glulx save file format (Quetzal) chunks the game state into sections (IFhd, Stks, MAll, CMem). Large Inform 7 games may have multi-kilobyte memory chunks (e.g., `CMem` chunk containing the entire game heap, potentially hundreds of kilobytes). `glk_put_buffer_stream()` writes these chunks in a single `fwrite()` call via `nextglk_file_write()`. On Linux, `fwrite()` can handle large buffers efficiently via buffered I/O. On the Spectrum Next, a single large `fwrite()` may require a correspondingly large buffer in the z88dk stdio implementation, or may need to be split.
+- **Linux implementation:** Single `fwrite()` call for the entire buffer, buffered by glibc's stdio (typically 4 KB or 8 KB buffer).
+- **Likely Spectrum Next impact:** On NextZXOS, the stdio implementation may have a smaller internal buffer or may write directly to SD card without buffering. Large `fwrite()` calls could be slow or could fail if the underlying filesystem has transfer size limits. The z88dk stdio may split large writes internally, but this should be verified on real hardware.
+- **Possible future mitigation:** Add a platform-specific write loop in `nextglk_file_write()` that splits large writes into smaller chunks (e.g., 512 bytes or 4 KB at a time) for SD card compatibility.

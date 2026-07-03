@@ -1,5 +1,6 @@
 #include "nextglk_internal.h"
 #include "nextglk.h"
+#include <stdint.h>
 
 /* -------------------------------------------------------------------------
  * Global state
@@ -240,8 +241,6 @@ void glk_put_char_stream(strid_t str, unsigned char ch)
     if (!st)
         return;
 
-    st->writecount++;
-
     switch (st->type) {
 
     case strtype_Window:
@@ -249,10 +248,17 @@ void glk_put_char_stream(strid_t str, unsigned char ch)
         if (st->win) {
             nextglk_put_char((char)ch);
         }
+        st->writecount++;
         break;
 
     case strtype_File:
-        /* File output — deferred to Phase 3 */
+        /* File stream output — write single byte to platform file layer */
+        {
+            unsigned char c = (unsigned char)ch;
+            uint32_t written = nextglk_file_write(
+                (NextGlkFile *)st->file, &c, 1);
+            st->writecount += written;
+        }
         break;
 
     case strtype_Memory:
@@ -260,6 +266,7 @@ void glk_put_char_stream(strid_t str, unsigned char ch)
         if (st->bufptr && st->bufptr < st->bufend) {
             *(st->bufptr++) = (unsigned char)ch;
         }
+        st->writecount++;
         break;
 
     default:
@@ -321,6 +328,17 @@ void glk_put_buffer_stream(strid_t str, char *buf, glui32 len)
     if (!st || !buf)
         return;
 
+    /* For file streams, write the entire buffer in one call to the
+     * platform file layer.  This is more efficient than looping through
+     * glk_put_char_stream() for each byte. */
+    if (st->type == strtype_File) {
+        uint32_t written = nextglk_file_write(
+            (NextGlkFile *)st->file, buf, len);
+        st->writecount += written;
+        return;
+    }
+
+    /* For window and memory streams, delegate to per-character output */
     for (i = 0; i < len; i++) {
         glk_put_char_stream(str, (unsigned char)buf[i]);
     }

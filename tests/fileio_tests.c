@@ -1392,5 +1392,355 @@ int fileio_tests_run(void)
 #undef TEST_3A4_WRITE
 #undef TEST_3A4_APPEND
 
+    /* =====================================================================
+     * Phase 3A.5 — File Stream Output Tests
+     * ===================================================================== */
+
+#define TEST_3A5_CHAR    "/tmp/nextgit-test-3a5-char.bin"
+#define TEST_3A5_BUFFER  "/tmp/nextgit-test-3a5-buffer.bin"
+#define TEST_3A5_STRING  "/tmp/nextgit-test-3a5-string.bin"
+#define TEST_3A5_MULTI   "/tmp/nextgit-test-3a5-multi.bin"
+#define TEST_3A5_EMPTY   "/tmp/nextgit-test-3a5-empty.bin"
+#define TEST_3A5_COUNT   "/tmp/nextgit-test-3a5-count.bin"
+#define TEST_3A5_APPEND  "/tmp/nextgit-test-3a5-append.bin"
+#define TEST_3A5_BINARY  "/tmp/nextgit-test-3a5-binary.bin"
+
+    /* ---- file stream single character output ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a5char", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.5: created fileref for single char output test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.5: opened file stream for single char output");
+
+        glk_put_char_stream(str, 'X');
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+
+        /* Verify file contents */
+        FILE *fp = fopen("test3a5char.glkdata", "rb");
+        TEST_ASSERT(fp != NULL,
+            "3A.5: can open file for reading after single char write");
+        int c = fgetc(fp);
+        TEST_ASSERT(c == 'X',
+            "3A.5: file contains 'X'");
+        c = fgetc(fp);
+        TEST_ASSERT(c == EOF,
+            "3A.5: file contains exactly one byte");
+        fclose(fp);
+        unlink("test3a5char.glkdata");
+    }
+
+    /* ---- file stream multiple character output ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a5multichar", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.5: created fileref for multiple char output test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.5: opened file stream for multiple char output");
+
+        glk_put_char_stream(str, 'H');
+        glk_put_char_stream(str, 'e');
+        glk_put_char_stream(str, 'l');
+        glk_put_char_stream(str, 'l');
+        glk_put_char_stream(str, 'o');
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+
+        /* Verify file contents */
+        FILE *fp = fopen("test3a5multichar.glkdata", "rb");
+        TEST_ASSERT(fp != NULL,
+            "3A.5: can open file for reading after multiple char writes");
+        char buf[8] = {0};
+        size_t n = fread(buf, 1, 5, fp);
+        TEST_ASSERT(n == 5,
+            "3A.5: file contains 5 bytes");
+        TEST_ASSERT(strcmp(buf, "Hello") == 0,
+            "3A.5: file contents match \"Hello\"");
+        fclose(fp);
+        unlink("test3a5multichar.glkdata");
+    }
+
+    /* ---- file stream buffer output ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a5buf", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.5: created fileref for buffer output test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.5: opened file stream for buffer output");
+
+        const char *data = "Hello, NextGit World!";
+        glk_put_buffer_stream(str, (char *)data, strlen(data));
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+
+        /* Verify file contents */
+        FILE *fp = fopen("test3a5buf.glkdata", "rb");
+        TEST_ASSERT(fp != NULL,
+            "3A.5: can open file for reading after buffer write");
+        char buf[64] = {0};
+        size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+        TEST_ASSERT(n == strlen(data),
+            "3A.5: file contains correct number of bytes");
+        TEST_ASSERT(strcmp(buf, data) == 0,
+            "3A.5: file contents match written buffer");
+        fclose(fp);
+        unlink("test3a5buf.glkdata");
+    }
+
+    /* ---- file stream string output ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a5str", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.5: created fileref for string output test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.5: opened file stream for string output");
+
+        glk_put_string_stream(str, "String via put_string_stream");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+
+        /* Verify file contents */
+        FILE *fp = fopen("test3a5str.glkdata", "rb");
+        TEST_ASSERT(fp != NULL,
+            "3A.5: can open file for reading after string write");
+        char buf[64] = {0};
+        size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+        TEST_ASSERT(n == strlen("String via put_string_stream"),
+            "3A.5: file contains correct number of bytes");
+        TEST_ASSERT(strcmp(buf, "String via put_string_stream") == 0,
+            "3A.5: file contents match written string");
+        fclose(fp);
+        unlink("test3a5str.glkdata");
+    }
+
+    /* ---- writecount updates correctly ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a5count", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.5: created fileref for writecount test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.5: opened file stream for writecount test");
+
+        stream_result_t result;
+        memset(&result, 0, sizeof(result));
+
+        /* Write 4 characters individually */
+        glk_put_char_stream(str, 'A');
+        glk_put_char_stream(str, 'B');
+        glk_put_char_stream(str, 'C');
+        glk_put_char_stream(str, 'D');
+
+        /* Write 5 bytes via buffer */
+        glk_put_buffer_stream(str, "EFGHI", 5);
+
+        /* Write 6 bytes via string (null terminator not written) */
+        glk_put_string_stream(str, "JKLMNO");
+
+        glk_stream_close(str, &result);
+
+        TEST_ASSERT(result.writecount == 15,
+            "3A.5: writecount is 15 (4 chars + 5 buffer + 6 string)");
+        TEST_ASSERT(result.readcount == 0,
+            "3A.5: readcount is 0 (write-only stream)");
+
+        glk_fileref_destroy(fref);
+
+        /* Verify file contents: ABCDEFGHIJKLMNO = 15 bytes */
+        FILE *fp = fopen("test3a5count.glkdata", "rb");
+        TEST_ASSERT(fp != NULL,
+            "3A.5: can open file for reading after writecount test");
+        char buf[32] = {0};
+        size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+        TEST_ASSERT(n == 15,
+            "3A.5: file contains 15 bytes");
+        TEST_ASSERT(strcmp(buf, "ABCDEFGHIJKLMNO") == 0,
+            "3A.5: file contents match expected concatenation");
+        fclose(fp);
+        unlink("test3a5count.glkdata");
+    }
+
+    /* ---- empty buffer output ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a5empty", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.5: created fileref for empty buffer test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.5: opened file stream for empty buffer test");
+
+        glk_put_buffer_stream(str, "data", 0);
+
+        stream_result_t result;
+        memset(&result, 0, sizeof(result));
+        glk_stream_close(str, &result);
+
+        TEST_ASSERT(result.writecount == 0,
+            "3A.5: writecount is 0 after empty buffer write");
+
+        glk_fileref_destroy(fref);
+
+        /* Verify file is empty */
+        FILE *fp = fopen("test3a5empty.glkdata", "rb");
+        TEST_ASSERT(fp != NULL,
+            "3A.5: file exists after empty buffer write");
+        long file_size;
+        fseek(fp, 0, SEEK_END);
+        file_size = ftell(fp);
+        TEST_ASSERT(file_size == 0,
+            "3A.5: file is empty (0 bytes)");
+        fclose(fp);
+        unlink("test3a5empty.glkdata");
+    }
+
+    /* ---- multiple writes to the same stream ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a5multi", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.5: created fileref for multiple writes test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.5: opened file stream for multiple writes");
+
+        glk_put_char_stream(str, '[');
+        glk_put_buffer_stream(str, "chunk1", 6);
+        glk_put_char_stream(str, '|');
+        glk_put_string_stream(str, "chunk2");
+        glk_put_char_stream(str, ']');
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+
+        /* Verify: [chunk1|chunk2] */
+        FILE *fp = fopen("test3a5multi.glkdata", "rb");
+        TEST_ASSERT(fp != NULL,
+            "3A.5: can open file for reading after multiple writes");
+        char buf[32] = {0};
+        size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+        TEST_ASSERT(n == 15,
+            "3A.5: file contains 15 bytes");
+        TEST_ASSERT(strcmp(buf, "[chunk1|chunk2]") == 0,
+            "3A.5: file contents match expected pattern");
+        fclose(fp);
+        unlink("test3a5multi.glkdata");
+    }
+
+    /* ---- append stream output ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Transcript, "test3a5appendout", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.5: created fileref for append output test");
+
+        /* First write session: create and write initial data */
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.5: opened file stream (write mode) for append test");
+        glk_put_string_stream(str, "Line 1\n");
+        glk_stream_close(str, NULL);
+
+        /* Second session: open for append */
+        str = glk_stream_open_file(fref, filemode_WriteAppend, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.5: reopened file stream (append mode) for append test");
+        glk_put_string_stream(str, "Line 2\n");
+        glk_stream_close(str, NULL);
+
+        /* Third session: append more */
+        str = glk_stream_open_file(fref, filemode_WriteAppend, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.5: reopened file stream (append mode) for second append");
+        glk_put_string_stream(str, "Line 3\n");
+        glk_stream_close(str, NULL);
+
+        glk_fileref_destroy(fref);
+
+        /* Verify all three lines are in the file */
+        FILE *fp = fopen("test3a5appendout.txt", "rb");
+        TEST_ASSERT(fp != NULL,
+            "3A.5: can open appended file for reading");
+        char buf[64] = {0};
+        size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+        TEST_ASSERT(n == 21,
+            "3A.5: appended file contains 21 bytes");
+        TEST_ASSERT(strcmp(buf, "Line 1\nLine 2\nLine 3\n") == 0,
+            "3A.5: appended file contains all three lines");
+        fclose(fp);
+        unlink("test3a5appendout.txt");
+    }
+
+    /* ---- binary data write via glk_put_buffer_stream ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a5binary", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.5: created fileref for binary output test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.5: opened file stream for binary output");
+
+        const unsigned char bin[] = { 0x00, 0xFF, 'A', 0x7F, 0x80 };
+        glk_put_buffer_stream(str, (const char *)bin, 5);
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+
+        /* Verify binary content */
+        FILE *fp = fopen("test3a5binary.glkdata", "rb");
+        TEST_ASSERT(fp != NULL,
+            "3A.5: can open binary file for reading");
+        unsigned char buf[8] = {0};
+        size_t n = fread(buf, 1, 5, fp);
+        TEST_ASSERT(n == 5,
+            "3A.5: binary file contains 5 bytes");
+        TEST_ASSERT(buf[0] == 0x00 && buf[1] == 0xFF && buf[2] == 'A'
+            && buf[3] == 0x7F && buf[4] == 0x80,
+            "3A.5: binary data preserved correctly including 0x00 and 0xFF");
+        fclose(fp);
+        unlink("test3a5binary.glkdata");
+    }
+
+#undef TEST_3A5_CHAR
+#undef TEST_3A5_BUFFER
+#undef TEST_3A5_STRING
+#undef TEST_3A5_MULTI
+#undef TEST_3A5_EMPTY
+#undef TEST_3A5_COUNT
+#undef TEST_3A5_APPEND
+#undef TEST_3A5_BINARY
+
     return 0;
 }
