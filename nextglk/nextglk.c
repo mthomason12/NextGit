@@ -126,7 +126,15 @@ gidispatch_rock_t gidispatch_get_objrock(void *obj, glui32 objclass)
                 return gli_mainwin->disprock;
             break;
         }
-        case gidisp_Class_Fileref:
+        case gidisp_Class_Fileref: {
+            fileref_t *fref = gli_filereflist;
+            while (fref) {
+                if (fref == obj)
+                    return fref->disprock;
+                fref = fref->next;
+            }
+            break;
+        }
         case gidisp_Class_Schannel:
         default:
             /* Not yet implemented — return zeroed rock */

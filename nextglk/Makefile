@@ -37,6 +37,7 @@ test_dispatch: libnextglk.a
 	$(CC) $(CFLAGS) -I. -o test_dispatch ../tests/test_main.c \
 		../tests/stream_tests.c ../tests/window_tests.c \
 		../tests/dispatch_tests.c \
+		../tests/fileio_tests.c \
 		-L. -lnextglk -lm
 	./test_dispatch
 
@@ -45,16 +46,27 @@ test_input: libnextglk.a
 		../tests/stream_tests.c ../tests/window_tests.c \
 		../tests/dispatch_tests.c ../tests/stream_output_tests.c \
 		../tests/glk_output_tests.c ../tests/input_tests.c \
+		../tests/fileio_tests.c \
 		-L. -lnextglk -lm
 	./test_input
+
+test_fileio: libnextglk.a
+	$(CC) $(CFLAGS) -I. -o test_fileio ../tests/test_main.c \
+		../tests/stream_tests.c ../tests/window_tests.c \
+		../tests/dispatch_tests.c ../tests/stream_output_tests.c \
+		../tests/glk_output_tests.c ../tests/input_tests.c \
+		../tests/fileio_tests.c \
+		-L. -lnextglk -lm
+	./test_fileio
 
 test_all: libnextglk.a
 	$(CC) $(CFLAGS) -I. -o test_all ../tests/test_main.c \
 		../tests/stream_tests.c ../tests/window_tests.c \
 		../tests/dispatch_tests.c ../tests/stream_output_tests.c \
 		../tests/glk_output_tests.c ../tests/input_tests.c \
+		../tests/fileio_tests.c \
 		-L. -lnextglk -lm
 	./test_all
 
 clean:
-	rm -f *.o *.a test_stream test_window test_dispatch test_input test_all
+	rm -f *.o *.a test_stream test_window test_dispatch test_input test_fileio test_all

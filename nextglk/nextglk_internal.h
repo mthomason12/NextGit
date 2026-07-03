@@ -90,9 +90,37 @@ struct glk_window_struct {
 };
 
 /* -------------------------------------------------------------------------
+ * fileref_t — Fileref object
+ *
+ * Ownership rules (from docs/glk-object-lifecycle.md):
+ *   - filename: OWNED (malloc'd by gli_new_fileref, freed by gli_delete_fileref)
+ *
+ * Filerefs are tracked in gli_filereflist (doubly-linked list, head insertion).
+ * Dispatch-layer registration happens in both creation and destruction paths.
+ * ------------------------------------------------------------------------- */
+
+struct glk_fileref_struct {
+    /* Dispatch-layer bookkeeping (MANDATORY) */
+    gidispatch_rock_t disprock;
+
+    /* Game-supplied rock value */
+    glui32 rock;
+
+    /* File usage mask (fileusage_Data, fileusage_SavedGame, etc.) */
+    glui32 usage;
+
+    /* Owned filename string (malloc'd) */
+    char *filename;
+
+    /* Linked list (MANDATORY for iteration) */
+    struct glk_fileref_struct *next, *prev;
+};
+
+/* -------------------------------------------------------------------------
  * Global state
  *
- * Defined in next_stream.c or next_window.c, declared extern here.
+ * Defined in next_stream.c, next_window.c, or nextglk_fileref.c,
+ * declared extern here.
  * ------------------------------------------------------------------------- */
 
 extern stream_t *gli_streamlist;
@@ -132,6 +160,13 @@ void gli_stream_fill_result(stream_t *str, stream_result_t *result);
 
 window_t *gli_new_window(glui32 rock);
 void gli_delete_window(window_t *win, stream_result_t *result);
+
+/* -------------------------------------------------------------------------
+ * Fileref lifecycle functions
+ * ------------------------------------------------------------------------- */
+
+fileref_t *gli_new_fileref(char *filename, glui32 usage, glui32 rock);
+void gli_delete_fileref(fileref_t *fref);
 
 /* -------------------------------------------------------------------------
  * Window API functions (declared in glk.h, implemented in next_window.c)
