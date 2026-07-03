@@ -1,0 +1,128 @@
+# NextGit Project Rules
+
+## Project Overview
+
+NextGit is a Glulx interpreter for the ZX Spectrum Next.
+
+It is based on:
+- Git (Glulx interpreter)
+- A custom Glk implementation called NextGlk
+
+## Architecture
+
+Game
+  -> Git VM
+  -> Glk ABI
+  -> NextGlk
+  -> Spectrum Next platform
+
+Git must remain as close to upstream as possible.
+
+Do not modify Git VM behaviour unless explicitly requested.
+
+Prefer implementing missing functionality in NextGlk.
+
+## Platform
+
+Target:
+- ZX Spectrum Next
+- z88dk
+- NextZXOS
+- SD card storage
+
+Optional:
+- Raspberry Pi acceleration
+
+The interpreter must function without the Raspberry Pi.
+
+## Glk
+
+NextGlk is a genuine Glk implementation.
+
+Do not create alternative abstraction layers.
+
+Use:
+- glk.h
+- gi_dispa.c
+- gi_dispa.h
+
+as the ABI contract.
+
+## Memory
+
+Do not implement memory banking inside NextGlk.
+
+Memory banking belongs to:
+- VM memory manager
+- Story memory subsystem
+
+NextGlk owns:
+- UI state
+- Image cache
+- Platform I/O
+
+## Graphics
+
+Games use:
+- Inform 7
+- Glulx
+- Inline images
+
+Current requirements:
+- Inline image display
+- No sound
+
+Initial UI layout:
+
++----------------------+
+|       IMAGE          |
++----------------------+
+|      TEXT            |
+|      TEXT            |
+| >                    |
++----------------------+
+
+## Coding Rules
+
+Always provide:
+- complete files
+- complete functions
+
+Never provide:
+- partial snippets
+- search-and-replace instructions
+- "insert here" guidance
+
+When generating code:
+- compileable first
+- functional later
+
+Stub implementations are acceptable if clearly marked.
+
+## Development Strategy
+
+1. Match Glk ABI.
+2. Build compileable stubs.
+3. Replace stubs incrementally.
+4. Keep commits small.
+5. Prefer understanding over implementation.
+
+## Documentation
+
+Before implementing a subsystem:
+- identify ABI
+- identify ownership
+- document architecture
+
+Prefer documentation before code.
+
+## Current Status
+
+- Git VM integrated
+- Glk dispatcher imported
+- NextGlk established
+- Image subsystem stubbed
+- Investigating core Glk object types:
+  - winid_t
+  - strid_t
+  - frefid_t
