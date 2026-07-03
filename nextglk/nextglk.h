@@ -22,6 +22,11 @@ void nextglk_put_char(char ch);
 void nextglk_put_string(const char* str);
 void nextglk_put_buffer(const char* buffer, uint16_t length);
 
+/* Test counters — exposed so test code can verify platform-layer routing */
+extern int nextglk_put_char_count;
+extern int nextglk_put_string_count;
+extern int nextglk_put_buffer_count;
+
 /* -------------------------------------------------------------------------
  * Input
  * ------------------------------------------------------------------------- */

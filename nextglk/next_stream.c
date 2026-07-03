@@ -1,4 +1,5 @@
 #include "nextglk_internal.h"
+#include "nextglk.h"
 
 /* -------------------------------------------------------------------------
  * Global state
@@ -17,7 +18,7 @@ stream_t *gli_currentstr = NULL;
  *
  * Parameters:
  *   type     — strtype_Window, strtype_File, or strtype_Memory
- *   readable — non-zero if the stream supports reading
+ *   readable — non-zero if the stream supports writing
  *   writable — non-zero if the stream supports writing
  *   rock     — game-supplied rock value (stored but not used yet)
  *
@@ -74,7 +75,7 @@ stream_t *gli_new_stream(int type, int readable, int writable, glui32 rock)
  * gli_stream_fill_result — Copy stream counts into a stream_result_t
  *
  * If result is non-NULL, copies the stream's readcount and writecount
- * into the result struct. If result is NULL, does nothing.
+ * into the result struct.  If result is NULL, does nothing.
  * ------------------------------------------------------------------------- */
 
 void gli_stream_fill_result(stream_t *str, stream_result_t *result)
@@ -174,4 +175,171 @@ glui32 glk_stream_get_rock(strid_t str)
 {
     (void)str;  /* stub — rock value not yet implemented */
     return 0;
+}
+
+/* =========================================================================
+ * Commit 4 — Stream Current-Pointer and Stream Output Functions
+ *
+ * See docs/phase1-implementation-plan.md for the commit specification.
+ * ========================================================================= */
+
+/* -------------------------------------------------------------------------
+ * glk_stream_get_current — Return the current output stream
+ *
+ * Returns the stream that was last set via glk_stream_set_current()
+ * or glk_set_window().  May return NULL if no stream is current.
+ *
+ * Defined in glk.h.
+ * ------------------------------------------------------------------------- */
+
+strid_t glk_stream_get_current(void)
+{
+    return gli_currentstr;
+}
+
+/* -------------------------------------------------------------------------
+ * glk_stream_set_current — Set the current output stream
+ *
+ * Subsequent calls to glk_put_char(), glk_put_string(), glk_put_buffer()
+ * (Commit 5) will write to this stream.
+ *
+ * Parameters:
+ *   str — the stream to make current, or NULL to clear the current stream.
+ *
+ * Defined in glk.h.
+ * ------------------------------------------------------------------------- */
+
+void glk_stream_set_current(strid_t str)
+{
+    gli_currentstr = (stream_t *)str;
+}
+
+/* -------------------------------------------------------------------------
+ * glk_put_char_stream — Write a single character to a specific stream
+ *
+ * Dispatches by stream type:
+ *   strtype_Window  → nextglk_put_char(ch)  (platform screen output)
+ *   strtype_File    → (deferred to Phase 3)
+ *   strtype_Memory  → write to buf[bufptr++]
+ *
+ * If the stream pointer is NULL, the call is silently ignored (this matches
+ * the behaviour of other Glk implementations when called with a NULL
+ * stream handle).
+ *
+ * Parameters:
+ *   str — the target stream (must not be NULL)
+ *   ch  — the character to write (0–255)
+ *
+ * Defined in glk.h.
+ * ------------------------------------------------------------------------- */
+
+void glk_put_char_stream(strid_t str, unsigned char ch)
+{
+    stream_t *st = (stream_t *)str;
+
+    if (!st)
+        return;
+
+    st->writecount++;
+
+    switch (st->type) {
+
+    case strtype_Window:
+        /* Route to platform screen layer */
+        if (st->win) {
+            nextglk_put_char((char)ch);
+        }
+        break;
+
+    case strtype_File:
+        /* File output — deferred to Phase 3 */
+        break;
+
+    case strtype_Memory:
+        /* Memory stream output — write to byte buffer if space remains */
+        if (st->bufptr && st->bufptr < st->bufend) {
+            *(st->bufptr++) = (unsigned char)ch;
+        }
+        break;
+
+    default:
+        /* Unknown stream type — silently ignore */
+        break;
+    }
+}
+
+/* -------------------------------------------------------------------------
+ * glk_put_string_stream — Write a null-terminated string to a stream
+ *
+ * Writes each character in the string to the stream via
+ * glk_put_char_stream().  The null terminator is not written.
+ *
+ * If the stream pointer is NULL, the call is silently ignored.
+ *
+ * Parameters:
+ *   str — the target stream (must not be NULL)
+ *   s   — the null-terminated string to write
+ *
+ * Defined in glk.h.
+ * ------------------------------------------------------------------------- */
+
+void glk_put_string_stream(strid_t str, char *s)
+{
+    stream_t *st = (stream_t *)str;
+
+    if (!st || !s)
+        return;
+
+    while (*s) {
+        glk_put_char_stream(str, (unsigned char)*s);
+        s++;
+    }
+}
+
+/* -------------------------------------------------------------------------
+ * glk_put_buffer_stream — Write a buffer of known length to a stream
+ *
+ * Writes each byte in the buffer to the stream via
+ * glk_put_char_stream().  Unlike glk_put_string_stream(), this function
+ * writes the given number of bytes regardless of null characters.
+ *
+ * If the stream pointer is NULL, the call is silently ignored.
+ *
+ * Parameters:
+ *   str  — the target stream (must not be NULL)
+ *   buf  — the buffer to write
+ *   len  — the number of bytes to write
+ *
+ * Defined in glk.h.
+ * ------------------------------------------------------------------------- */
+
+void glk_put_buffer_stream(strid_t str, char *buf, glui32 len)
+{
+    stream_t *st = (stream_t *)str;
+    glui32 i;
+
+    if (!st || !buf)
+        return;
+
+    for (i = 0; i < len; i++) {
+        glk_put_char_stream(str, (unsigned char)buf[i]);
+    }
+}
+
+/* -------------------------------------------------------------------------
+ * glk_set_style_stream — Set the style for subsequent output on a stream
+ *
+ * Records the current style for the stream.  Style rendering is not
+ * implemented yet; this function is a stub that simply records the style
+ * value so it can be queried later if needed.
+ *
+ * Defined in glk.h.
+ *
+ * TODO: Implement style rendering when the screen layer supports styles.
+ * ------------------------------------------------------------------------- */
+
+void glk_set_style_stream(strid_t str, glui32 styl)
+{
+    (void)str;
+    (void)styl;
 }
