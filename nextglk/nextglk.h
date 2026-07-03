@@ -49,6 +49,9 @@ NextGlkFile* nextglk_file_open_read(
 NextGlkFile* nextglk_file_open_write(
     const char* path);
 
+NextGlkFile* nextglk_file_append(
+    const char* path);
+
 uint32_t nextglk_file_read(
     NextGlkFile* file,
     void* buffer,

@@ -151,6 +151,80 @@ Priority:
 - **Likely Spectrum Next impact:** Minimal — the array is small and stack-allocated. `strlen()` on string literals is likely inlined or cheap. Not a concern for the Next.
 - **Possible future mitigation:** None needed.
 
+## Phase 3A.3 — Platform File Write I/O
+
+### malloc/free in nextglk_file_open_write and nextglk_file_append
+
+- **Location:** `nextglk/nextglk_file.c`, `nextglk_file_open_write()` and `nextglk_file_append()`
+- **Concern:** Each call to `nextglk_file_open_write()` or `nextglk_file_append()` allocates a `NextGlkFile` wrapper struct via `malloc(sizeof(NextGlkFile))`. On 64-bit Linux this is 8 bytes (a single `FILE*` pointer). The wrapper is freed in `nextglk_file_close()`. On failure, the wrapper is freed and NULL is returned (no leak).
+- **Linux implementation:** Standard `malloc()`/`free()` via glibc.
+- **Likely Spectrum Next impact:** z88dk's `malloc` may have limited heap and fragmentation risks. However, the struct is very small (likely 2–4 bytes on Z80 depending on pointer size) and the number of concurrently open files is tiny (typically 0–2: one save file or one transcript file).
+- **Possible future mitigation:** Embed the `NextGlkFile` wrapper inside `stream_t.file` as a direct `FILE*` instead of heap-allocating a separate wrapper. This would eliminate the malloc/free pair entirely for every file open/close.
+
+### FILE* assumptions in NextGlkFile
+
+- **Location:** `nextglk/nextglk_file.c`, `struct NextGlkFile`
+- **Concern:** The `NextGlkFile` struct contains a single `FILE*` pointer. On Linux this is a standard `FILE*` from `<stdio.h>`. On the Spectrum Next / z88dk, the `FILE*` abstraction may not exist or may behave differently (e.g., NextZXOS uses file handles, not `stdio` streams).
+- **Linux implementation:** Standard glibc `fopen()`/`fclose()`/`fwrite()`.
+- **Likely Spectrum Next impact:** z88dk may provide a subset of `stdio` with different semantics for fopen modes, especially binary mode (`"wb"`/`"ab"`). The `fwrite()` return value (bytes written) may differ from POSIX expectations on a partial write. `fclose()` on NextZXOS may behave differently.
+- **Possible future mitigation:** Replace the `FILE*` with a platform-specific file descriptor or handle type when porting to the Next. The `NextGlkFile` struct is opaque to callers (only `nextglk.h` users see the typedef), so the internals can be changed without affecting the rest of the codebase.
+
+### fopen "wb" mode (binary write, create/truncate)
+
+- **Location:** `nextglk/nextglk_file.c`, `nextglk_file_open_write()`
+- **Concern:** Uses `fopen(path, "wb")` — creates the file if it doesn't exist, truncates to zero length if it does. The `"b"` flag ensures binary mode (no newline translation). On Linux this is standard.
+- **Linux implementation:** Standard glibc `fopen("wb")`.
+- **Likely Spectrum Next impact:** z88dk's `fopen` may not support the `"b"` flag or may treat it as a no-op (since the Spectrum Next doesn't do CR/LF translation). Truncation behaviour (`"w"` mode) may differ if the underlying filesystem (e.g., FAT on SD card) doesn't support truncation in the same way. If truncation fails silently, files could accumulate stale data after the new content.
+- **Possible future mitigation:** Explicitly delete the file before creating it via platform-specific delete, then open with `"wb"` to ensure a clean file. Or test truncation behaviour on the actual Next hardware and adjust.
+
+### fopen "ab" mode (binary append, create if missing)
+
+- **Location:** `nextglk/nextglk_file.c`, `nextglk_file_append()`
+- **Concern:** Uses `fopen(path, "ab")` — creates the file if it doesn't exist, appends to the end if it does. The append semantic (always write at end, atomically) is critical for transcript files that accumulate output over time.
+- **Linux implementation:** Standard glibc `fopen("ab")`.
+- **Likely Spectrum Next impact:** z88dk's `fopen` may not support append mode `"a"` on all targets. If append is not supported, the transcript file could be overwritten each time it's opened. NextZXOS file APIs may require explicit seek-to-end before each write.
+- **Possible future mitigation:** If `"ab"` is not available, implement append by opening with `"r+b"` or `"wb"`, seeking to end with `fseek(fp, 0, SEEK_END)`, and then writing. This loses the atomic append guarantee of `"ab"` mode but is functionally equivalent for our single-threaded use case.
+
+### fwrite return value and partial writes
+
+- **Location:** `nextglk/nextglk_file.c`, `nextglk_file_write()`
+- **Concern:** Uses `fwrite(buffer, 1, length, fp)` and returns the result directly cast to `uint32_t`. On Linux, `fwrite` returns the number of items written — either `length` (success) or a smaller number (partial write or error). Partial writes are not retried in this implementation.
+- **Linux implementation:** Standard glibc `fwrite()`. Partial writes are rare on local filesystems but can happen on full disks.
+- **Likely Spectrum Next impact:** On SD card filesystems, `fwrite` may return fewer bytes than requested on a full disk or filesystem error. The caller (`glk_put_buffer_stream`) receives the actual byte count and can handle it. z88dk's `fwrite` may have different behaviour for zero-length writes or NULL buffers.
+- **Possible future mitigation:** Add a retry loop for partial writes, or at minimum ensure `glk_put_buffer_stream` correctly reports the byte count. The current single-call approach is acceptable for the Linux reference implementation.
+
+### Path handling assumptions
+
+- **Location:** `nextglk/nextglk_file.c`, all file functions
+- **Concern:** File paths are passed as `const char*` and forwarded directly to `fopen()`. No path sanitisation or validation is performed. The path may be a relative path (current working directory), an absolute path, or contain directory separators.
+- **Linux implementation:** Standard POSIX path handling via glibc `fopen()`.
+- **Likely Spectrum Next impact:** NextZXOS uses different path conventions (e.g., drive letters or volume names). The maximum path length on SD card FAT filesystems may be limited (e.g., 8.3 filenames or 255-character long filenames). Forward slashes `/` vs backslashes `\` may matter. The current working directory concept may differ from POSIX.
+- **Possible future mitigation:** The path is generated by `nextglk_fileref.c` (fileref creation), not by the game. Fileref creation already produces short, ASCII-only filenames without path separators. This limits the path handling concern to the working directory prefix, which can be handled by a platform-specific init step that sets the NextZXOS current directory.
+
+### Temporary file cleanup in tests
+
+- **Location:** `tests/fileio_tests.c`, Phase 3A.3 tests
+- **Concern:** Tests create files in `/tmp/nextgit-test-3a3-*.bin` and clean them up with `unlink()`. If a test crashes mid-execution, temporary files may be left behind.
+- **Linux implementation:** Standard POSIX `unlink()` via glibc.
+- **Likely Spectrum Next impact:** Not applicable — tests run on Linux only.
+- **Possible future mitigation:** Test harness could use a temporary directory that is cleaned on startup, or use `atexit()` handlers. Acceptable as-is for reference implementation.
+
+### fseek/ftell in tests for file content verification
+
+- **Location:** `tests/fileio_tests.c`, Phase 3A.3 tests
+- **Concern:** Tests use `fseek(fp, 0, SEEK_END)` and `ftell(fp)` to determine file size for verification. These are POSIX stdio functions.
+- **Linux implementation:** Standard glibc `fseek()`/`ftell()`.
+- **Likely Spectrum Next impact:** Not applicable — tests run on Linux only. However, `fseek`/`ftell` will be needed in Phase 3A.6 for `glk_stream_get_position`/`glk_stream_set_position`, and those functions will need platform-specific implementations on the Next.
+- **Possible future mitigation:** When implementing position functions for the Next, prefer explicit byte counters maintained in `NextGlkFile` rather than relying on `ftell()`/`fseek()` if those are unreliable on NextZXOS.
+
+### assert-based test macros vs TEST_ASSERT
+
+- **Location:** `tests/fileio_tests.c`, Phase 3A.3 tests
+- **Concern:** Phase 3A.3 tests use `TEST_ASSERT` consistently (matching existing test style). No raw `assert()` calls from `<assert.h>`. Test failure returns 1 from `fileio_tests_run()`, which is handled by `test_main.c`.
+- **Linux implementation:** Custom `TEST_ASSERT` macro from `test_common.h` using `printf` and `return`.
+- **Likely Spectrum Next impact:** Not applicable — tests run on Linux only.
+- **Possible future mitigation:** None needed.
+
 ### unlink in tests/fileio_tests.c for temp file cleanup
 
 - **Location:** `tests/fileio_tests.c`, Phase 3A.2 temp file tests

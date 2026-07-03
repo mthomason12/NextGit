@@ -24,10 +24,12 @@
  *   - glk_fileref_destroy() after creation
  */
 
+#include "../nextglk/nextglk.h"
 #include "../nextglk/nextglk_internal.h"
 #include "test_common.h"
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 /* -------------------------------------------------------------------------
  * Mock callback state
@@ -850,11 +852,313 @@ int fileio_tests_run(void)
         glk_fileref_destroy(f_by_prompt);
         glk_fileref_destroy(f_by_name);
 
-        /* Verify list is empty after destroying all */
+    /* Verify list is empty after destroying all */
         iter = glk_fileref_iterate(NULL, NULL);
         TEST_ASSERT(iter == NULL,
             "iteration returns NULL after all filerefs destroyed");
     }
+
+    /* =====================================================================
+     * Phase 3A.3 — Platform File Write I/O Tests
+     * ===================================================================== */
+
+#define TEST_FILE "/tmp/nextgit-test-3a3-write.bin"
+#define TEST_FILE_APPEND "/tmp/nextgit-test-3a3-append.bin"
+
+    /* ---- open_write success ---- */
+
+    {
+        NextGlkFile *f = nextglk_file_open_write(TEST_FILE);
+        TEST_ASSERT(f != NULL,
+            "nextglk_file_open_write() creates a NextGlkFile");
+        nextglk_file_close(f);
+        unlink(TEST_FILE);
+    }
+
+    /* ---- open_write invalid path ---- */
+
+    {
+        NextGlkFile *f = nextglk_file_open_write("/nonexistent_dir_xyz/test.bin");
+        TEST_ASSERT(f == NULL,
+            "nextglk_file_open_write() with invalid path returns NULL");
+    }
+
+    /* ---- open_write with NULL path ---- */
+
+    {
+        NextGlkFile *f = nextglk_file_open_write(NULL);
+        TEST_ASSERT(f == NULL,
+            "nextglk_file_open_write(NULL) returns NULL");
+    }
+
+    /* ---- write small buffer ---- */
+
+    {
+        NextGlkFile *f = nextglk_file_open_write(TEST_FILE);
+        TEST_ASSERT(f != NULL,
+            "open_write for small buffer test succeeds");
+
+        const char *data = "Hello, NextGit!";
+        uint32_t written = nextglk_file_write(f, data, strlen(data));
+        TEST_ASSERT(written == strlen(data),
+            "nextglk_file_write() writes correct number of bytes");
+
+        nextglk_file_close(f);
+
+        /* Verify file contents */
+        FILE *fp = fopen(TEST_FILE, "rb");
+        TEST_ASSERT(fp != NULL,
+            "can open test file for reading");
+        char buf[64] = {0};
+        size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+        TEST_ASSERT(n == strlen(data),
+            "file contains correct number of bytes");
+        TEST_ASSERT(strcmp(buf, data) == 0,
+            "file content matches written data");
+        fclose(fp);
+        unlink(TEST_FILE);
+    }
+
+    /* ---- write empty buffer ---- */
+
+    {
+        NextGlkFile *f = nextglk_file_open_write(TEST_FILE);
+        TEST_ASSERT(f != NULL,
+            "open_write for empty buffer test succeeds");
+
+        uint32_t written = nextglk_file_write(f, "data", 0);
+        TEST_ASSERT(written == 0,
+            "nextglk_file_write() with zero length returns 0");
+
+        nextglk_file_close(f);
+
+        /* File should exist but be empty */
+        FILE *fp = fopen(TEST_FILE, "rb");
+        TEST_ASSERT(fp != NULL,
+            "can open test file for reading");
+        long file_size;
+        fseek(fp, 0, SEEK_END);
+        file_size = ftell(fp);
+        TEST_ASSERT(file_size == 0,
+            "file is empty after writing zero bytes");
+        fclose(fp);
+        unlink(TEST_FILE);
+    }
+
+    /* ---- write multiple buffers ---- */
+
+    {
+        NextGlkFile *f = nextglk_file_open_write(TEST_FILE);
+        TEST_ASSERT(f != NULL,
+            "open_write for multiple buffers test succeeds");
+
+        uint32_t w1 = nextglk_file_write(f, "ABC", 3);
+        TEST_ASSERT(w1 == 3,
+            "first write returns 3");
+
+        uint32_t w2 = nextglk_file_write(f, "DEFG", 4);
+        TEST_ASSERT(w2 == 4,
+            "second write returns 4");
+
+        uint32_t w3 = nextglk_file_write(f, "HI", 2);
+        TEST_ASSERT(w3 == 2,
+            "third write returns 2");
+
+        nextglk_file_close(f);
+
+        /* Verify concatenated content */
+        FILE *fp = fopen(TEST_FILE, "rb");
+        TEST_ASSERT(fp != NULL,
+            "can open test file for reading");
+        char buf[32] = {0};
+        size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+        TEST_ASSERT(n == 9,
+            "file contains 9 bytes");
+        TEST_ASSERT(strcmp(buf, "ABCDEFGHI") == 0,
+            "file content is concatenated writes");
+        fclose(fp);
+        unlink(TEST_FILE);
+    }
+
+    /* ---- append existing file ---- */
+
+    {
+        /* First, write initial content */
+        NextGlkFile *f = nextglk_file_open_write(TEST_FILE_APPEND);
+        TEST_ASSERT(f != NULL,
+            "open_write for append test succeeds");
+        nextglk_file_write(f, "first\n", 6);
+        nextglk_file_close(f);
+
+        /* Now append */
+        f = nextglk_file_append(TEST_FILE_APPEND);
+        TEST_ASSERT(f != NULL,
+            "nextglk_file_append() opens existing file");
+        nextglk_file_write(f, "second\n", 7);
+        nextglk_file_close(f);
+
+        /* Verify both lines present */
+        FILE *fp = fopen(TEST_FILE_APPEND, "rb");
+        TEST_ASSERT(fp != NULL,
+            "can open appended file for reading");
+        char buf[32] = {0};
+        size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+        TEST_ASSERT(n == 13,
+            "appended file has 13 bytes");
+        TEST_ASSERT(strcmp(buf, "first\nsecond\n") == 0,
+            "appended file contains both lines");
+        fclose(fp);
+        unlink(TEST_FILE_APPEND);
+    }
+
+    /* ---- append missing file (creates it) ---- */
+
+    {
+        /* Ensure file does not exist */
+        unlink(TEST_FILE_APPEND);
+
+        NextGlkFile *f = nextglk_file_append(TEST_FILE_APPEND);
+        TEST_ASSERT(f != NULL,
+            "nextglk_file_append() creates missing file");
+        nextglk_file_write(f, "newfile\n", 8);
+        nextglk_file_close(f);
+
+        /* Verify file was created with content */
+        FILE *fp = fopen(TEST_FILE_APPEND, "rb");
+        TEST_ASSERT(fp != NULL,
+            "appended (missing) file was created");
+        char buf[32] = {0};
+        size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+        TEST_ASSERT(n == 8,
+            "file contains 8 bytes");
+        TEST_ASSERT(strcmp(buf, "newfile\n") == 0,
+            "file content matches");
+        fclose(fp);
+        unlink(TEST_FILE_APPEND);
+    }
+
+    /* ---- append with NULL path ---- */
+
+    {
+        NextGlkFile *f = nextglk_file_append(NULL);
+        TEST_ASSERT(f == NULL,
+            "nextglk_file_append(NULL) returns NULL");
+    }
+
+    /* ---- append with invalid path ---- */
+
+    {
+        NextGlkFile *f = nextglk_file_append("/nonexistent_dir_xyz/test.bin");
+        TEST_ASSERT(f == NULL,
+            "nextglk_file_append() with invalid path returns NULL");
+    }
+
+    /* ---- close file ---- */
+
+    {
+        NextGlkFile *f = nextglk_file_open_write(TEST_FILE);
+        TEST_ASSERT(f != NULL,
+            "open_write for close test succeeds");
+        nextglk_file_close(f);
+        TEST_ASSERT(1,
+            "nextglk_file_close() on valid file succeeds");
+        unlink(TEST_FILE);
+    }
+
+    /* ---- close NULL ---- */
+
+    {
+        nextglk_file_close(NULL);
+        TEST_ASSERT(1,
+            "nextglk_file_close(NULL) does not crash");
+    }
+
+    /* ---- write with NULL file ---- */
+
+    {
+        uint32_t written = nextglk_file_write(NULL, "data", 4);
+        TEST_ASSERT(written == 0,
+            "nextglk_file_write(NULL, ...) returns 0");
+    }
+
+    /* ---- write with NULL buffer ---- */
+
+    {
+        NextGlkFile *f = nextglk_file_open_write(TEST_FILE);
+        TEST_ASSERT(f != NULL,
+            "open_write for NULL buffer write test succeeds");
+
+        uint32_t written = nextglk_file_write(f, NULL, 4);
+        TEST_ASSERT(written == 0,
+            "nextglk_file_write(f, NULL, ...) returns 0");
+
+        nextglk_file_close(f);
+        unlink(TEST_FILE);
+    }
+
+    /* ---- open_write truncates existing file ---- */
+
+    {
+        /* Write initial file with content */
+        NextGlkFile *f = nextglk_file_open_write(TEST_FILE);
+        TEST_ASSERT(f != NULL,
+            "first open_write succeeds");
+        nextglk_file_write(f, "original_content_long", 21);
+        nextglk_file_close(f);
+
+        /* Re-open with write (should truncate) */
+        f = nextglk_file_open_write(TEST_FILE);
+        TEST_ASSERT(f != NULL,
+            "second open_write succeeds (truncates)");
+        nextglk_file_write(f, "short", 5);
+        nextglk_file_close(f);
+
+        /* Verify file is truncated and contains only new content */
+        FILE *fp = fopen(TEST_FILE, "rb");
+        TEST_ASSERT(fp != NULL,
+            "can open truncated file for reading");
+        char buf[64] = {0};
+        size_t n = fread(buf, 1, sizeof(buf) - 1, fp);
+        TEST_ASSERT(n == 5,
+            "file has 5 bytes (truncated)");
+        TEST_ASSERT(strcmp(buf, "short") == 0,
+            "file content is only the new data");
+        fclose(fp);
+        unlink(TEST_FILE);
+    }
+
+    /* ---- write byte value 0 ---- */
+
+    {
+        NextGlkFile *f = nextglk_file_open_write(TEST_FILE);
+        TEST_ASSERT(f != NULL,
+            "open_write for binary zero test succeeds");
+
+        /* Write a buffer containing embedded null bytes */
+        const unsigned char binary[] = { 'A', 0, 'B', 0, 'C' };
+        uint32_t written = nextglk_file_write(f, binary, 5);
+        TEST_ASSERT(written == 5,
+            "write binary data with null bytes returns 5");
+
+        nextglk_file_close(f);
+
+        /* Verify binary content */
+        FILE *fp = fopen(TEST_FILE, "rb");
+        TEST_ASSERT(fp != NULL,
+            "can open binary file for reading");
+        unsigned char buf[8] = {0};
+        size_t n = fread(buf, 1, 5, fp);
+        TEST_ASSERT(n == 5,
+            "read 5 bytes back");
+        TEST_ASSERT(buf[0] == 'A' && buf[1] == 0 && buf[2] == 'B'
+            && buf[3] == 0 && buf[4] == 'C',
+            "binary content preserved including null bytes");
+        fclose(fp);
+        unlink(TEST_FILE);
+    }
+
+#undef TEST_FILE
+#undef TEST_FILE_APPEND
 
     return 0;
 }
