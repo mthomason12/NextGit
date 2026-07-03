@@ -1160,5 +1160,237 @@ int fileio_tests_run(void)
 #undef TEST_FILE
 #undef TEST_FILE_APPEND
 
+    /* =====================================================================
+     * Phase 3A.4 — File Stream Open and Close Tests
+     * ===================================================================== */
+
+#define TEST_3A4_WRITE  "/tmp/nextgit-test-3a4-write.bin"
+#define TEST_3A4_APPEND "/tmp/nextgit-test-3a4-append.bin"
+
+    /* ---- open file stream write mode ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a4write", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.4: created fileref for write stream test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.4: glk_stream_open_file(filemode_Write) returns non-NULL stream");
+
+        stream_t *s = (stream_t *)str;
+        TEST_ASSERT(s->type == strtype_File,
+            "3A.4: stream type is strtype_File");
+        TEST_ASSERT(s->writable == 1,
+            "3A.4: write-mode stream is writable");
+        TEST_ASSERT(s->readable == 0,
+            "3A.4: write-mode stream is not readable");
+        TEST_ASSERT(s->file != NULL,
+            "3A.4: stream has non-NULL file pointer");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+        unlink("test3a4write.glkdata");
+    }
+
+    /* ---- open file stream append mode ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Transcript, "test3a4append", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.4: created fileref for append stream test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_WriteAppend, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.4: glk_stream_open_file(filemode_WriteAppend) returns non-NULL stream");
+
+        stream_t *s = (stream_t *)str;
+        TEST_ASSERT(s->type == strtype_File,
+            "3A.4: append stream type is strtype_File");
+        TEST_ASSERT(s->writable == 1,
+            "3A.4: append stream is writable");
+
+        glk_stream_close(str, NULL);
+
+        /* In append mode, the file should exist on disk.
+         * Use access() directly since glk_fileref_does_file_exist is
+         * still a stub (deferred to Phase 3A.7). */
+        TEST_ASSERT(access("test3a4append.txt", F_OK) == 0,
+            "3A.4: append stream creates file on disk");
+
+        glk_fileref_destroy(fref);
+        unlink("test3a4append.txt");
+    }
+
+    /* ---- NULL fileref returns NULL ---- */
+
+    {
+        strid_t str = glk_stream_open_file(NULL, filemode_Write, 0);
+        TEST_ASSERT(str == NULL,
+            "3A.4: glk_stream_open_file(NULL, ...) returns NULL");
+    }
+
+    /* ---- read mode returns NULL ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a4read", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.4: created fileref for read-mode test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Read, 0);
+        TEST_ASSERT(str == NULL,
+            "3A.4: glk_stream_open_file(filemode_Read) returns NULL (deferred to Phase 3B)");
+
+        glk_fileref_destroy(fref);
+    }
+
+    /* ---- stream registered in gli_streamlist ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a4list", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.4: created fileref for stream list test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.4: opened file stream for list test");
+
+        /* Search gli_streamlist for the stream */
+        stream_t *iter = gli_streamlist;
+        int found = 0;
+        while (iter != NULL)
+        {
+            if (iter == (stream_t *)str)
+            {
+                found = 1;
+                break;
+            }
+            iter = iter->next;
+        }
+        TEST_ASSERT(found == 1,
+            "3A.4: file stream is present in gli_streamlist");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+        unlink("test3a4list.glkdata");
+    }
+
+    /* ---- stream removed from list on close ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a4removed", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.4: created fileref for stream removal test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.4: opened file stream for removal test");
+
+        glk_stream_close(str, NULL);
+
+        /* Verify stream is no longer in gli_streamlist */
+        stream_t *iter = gli_streamlist;
+        int found = 0;
+        while (iter != NULL)
+        {
+            if (iter == (stream_t *)str)
+            {
+                found = 1;
+                break;
+            }
+            iter = iter->next;
+        }
+        TEST_ASSERT(found == 0,
+            "3A.4: file stream is removed from gli_streamlist after close");
+
+        glk_fileref_destroy(fref);
+        unlink("test3a4removed.glkdata");
+    }
+
+    /* ---- close file stream ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a4close", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.4: created fileref for close test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.4: opened file stream for close test");
+
+        glk_stream_close(str, NULL);
+        TEST_ASSERT(1,
+            "3A.4: glk_stream_close() on file stream does not crash");
+
+        glk_fileref_destroy(fref);
+        unlink("test3a4close.glkdata");
+    }
+
+    /* ---- close current stream ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a4current", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.4: created fileref for current stream test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.4: opened file stream for current stream test");
+
+        /* Set as current stream */
+        glk_stream_set_current(str);
+        TEST_ASSERT(glk_stream_get_current() == str,
+            "3A.4: stream is current after glk_stream_set_current");
+
+        /* Close the current stream */
+        glk_stream_close(str, NULL);
+        TEST_ASSERT(glk_stream_get_current() == NULL,
+            "3A.4: current stream is NULL after closing current stream");
+
+        glk_fileref_destroy(fref);
+        unlink("test3a4current.glkdata");
+    }
+
+    /* ---- stream rock preserved (gaps documented) ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a4rock", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.4: created fileref for rock test");
+
+        /* Open with rock=42 */
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 42);
+        TEST_ASSERT(str != NULL,
+            "3A.4: opened file stream with rock=42");
+
+        /* glk_stream_get_rock currently returns 0 (rock storage is a known gap) */
+        TEST_ASSERT(glk_stream_get_rock(str) == 0,
+            "3A.4: glk_stream_get_rock returns 0 (rock storage deferred)");
+
+        glk_stream_close(str, NULL);
+
+        /* Open with rock=0 */
+        str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.4: opened file stream with rock=0");
+        TEST_ASSERT(glk_stream_get_rock(str) == 0,
+            "3A.4: glk_stream_get_rock returns 0 for rock=0 stream");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+        unlink("test3a4rock.glkdata");
+    }
+
+#undef TEST_3A4_WRITE
+#undef TEST_3A4_APPEND
+
     return 0;
 }

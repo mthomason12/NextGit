@@ -536,7 +536,10 @@ strid_t glk_stream_open_memory(char *buf, glui32 buflen, glui32 fmode,
  *
  * If the stream is a window stream (strtype_Window), this function does
  * nothing — window streams are owned by the window and must be closed
- * via glk_window_close(). For other stream types, calls gli_delete_stream().
+ * via glk_window_close(). For strtype_File streams, closes the underlying
+ * platform file handle and clears any window echo-stream references before
+ * calling gli_delete_stream().  For other stream types, calls
+ * gli_delete_stream() directly.
  *
  * Parameters:
  *   str    — the stream to close
@@ -554,6 +557,24 @@ void glk_stream_close(strid_t str, stream_result_t *result)
     if (st->type == strtype_Window)
         return;
 
+    if (st->type == strtype_File)
+    {
+        /* Close the underlying platform file handle */
+        if (st->file)
+        {
+            nextglk_file_close((NextGlkFile *)st->file);
+            st->file = NULL;
+        }
+
+        /* If any window's echo stream references this stream, clear it */
+        if (gli_mainwin && gli_mainwin->echostr == st)
+            gli_mainwin->echostr = NULL;
+
+        gli_delete_stream(st, result);
+        return;
+    }
+
+    /* Memory and other stream types */
     gli_delete_stream(st, result);
 }
 
@@ -659,23 +680,83 @@ glui32 glk_get_buffer_stream(strid_t str, char *buf, glui32 len)
 /* -------------------------------------------------------------------------
  * glk_stream_open_file — Open a file stream
  *
- * Phase 1 stub: returns NULL. File stream support is deferred to Phase 3.
+ * Creates a strtype_File stream backed by a NextGlkFile opened via the
+ * platform file layer.  The stream is registered in gli_streamlist and
+ * with the dispatch layer via gli_new_stream().
+ *
+ * Supported modes (Phase 3A.4):
+ *   filemode_Write       — open for writing (create/truncate)
+ *   filemode_WriteAppend — open for appending
+ *   filemode_ReadWrite   — treated as write for now
+ *   filemode_Read        — returns NULL (deferred to Phase 3B)
  *
  * Parameters:
- *   fileref — the file reference
- *   fmode   — the file mode (read/write/append)
- *   rock    — the rock value
+ *   fileref — the file reference (must not be NULL)
+ *   fmode   — the file mode (filemode_Write, filemode_WriteAppend, etc.)
+ *   rock    — the rock value (passed through to gli_new_stream)
  *
  * Returns:
- *   NULL (not implemented in Phase 1).
+ *   A new strtype_File stream, or NULL on failure.
  * ------------------------------------------------------------------------- */
 
 strid_t glk_stream_open_file(frefid_t fileref, glui32 fmode, glui32 rock)
 {
-    (void)fileref;
-    (void)fmode;
-    (void)rock;
-    return NULL;
+    fileref_t *fref = (fileref_t *)fileref;
+    stream_t *str;
+    NextGlkFile *nf = NULL;
+    int readable = 0;
+    int writable = 0;
+
+    /* Validate fileref */
+    if (!fref)
+        return NULL;
+
+    /* Determine mode and open platform file */
+    switch (fmode)
+    {
+        case filemode_Write:
+            readable = 0;
+            writable = 1;
+            nf = nextglk_file_open_write(fref->filename);
+            break;
+
+        case filemode_WriteAppend:
+            readable = 0;
+            writable = 1;
+            nf = nextglk_file_append(fref->filename);
+            break;
+
+        case filemode_ReadWrite:
+            /* Treated as write for now — true read-write deferred */
+            readable = 1;
+            writable = 1;
+            nf = nextglk_file_open_write(fref->filename);
+            break;
+
+        case filemode_Read:
+            /* Read mode deferred to Phase 3B */
+            return NULL;
+
+        default:
+            return NULL;
+    }
+
+    /* Platform open failed */
+    if (!nf)
+        return NULL;
+
+    /* Create the Glk stream */
+    str = gli_new_stream(strtype_File, readable, writable, rock);
+    if (!str)
+    {
+        nextglk_file_close(nf);
+        return NULL;
+    }
+
+    /* Attach the platform file handle */
+    str->file = nf;
+
+    return (strid_t)str;
 }
 
 /* -------------------------------------------------------------------------

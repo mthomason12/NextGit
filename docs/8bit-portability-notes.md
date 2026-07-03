@@ -231,3 +231,77 @@ Priority:
 - **Concern:** Tests call `unlink()` directly on temp files created by `glk_fileref_create_temp()` because `glk_fileref_delete_file()` is still a stub (deferred to Phase 3A.7). This is a test-only concern.
 - **Linux implementation:** Standard POSIX `unlink()`.
 - **Likely Spectrum Next impact:** Not applicable — tests run on Linux only. The Spectrum Next build will not compile the test suite.
+
+## Phase 3A.4 — File Stream Open and Close
+
+### Stream/file coupling (stream_t.file owns NextGlkFile*)
+
+- **Location:** `nextglk/nextglk.c`, `glk_stream_open_file()` and `glk_stream_close()`
+- **Concern:** `stream_t.file` stores a `NextGlkFile*` pointer. The stream owns this pointer and is responsible for calling `nextglk_file_close()` on it during stream destruction. The coupling is 1:1; each file stream wraps exactly one platform file handle. If the platform layer changes the `NextGlkFile` to embed data directly rather than heap-allocate a wrapper, the `void *file` field in `stream_t` can still hold it (pointer or opaque handle).
+- **Linux implementation:** `NextGlkFile*` is a heap-allocated wrapper around a `FILE*`. Two allocations per file stream open: one for `stream_t` (in `gli_new_stream`), one for `NextGlkFile` (in `nextglk_file_open_write`/`nextglk_file_append`).
+- **Likely Spectrum Next impact:** Double allocation per file open is wasteful on a constrained heap. The `NextGlkFile` wrapper could be eliminated by storing the platform handle directly inside `stream_t` or using a fixed pool. For now, the number of concurrently open file streams is tiny (0–2), so this is not a critical concern.
+- **Possible future mitigation:** Eliminate the `NextGlkFile` wrapper heap allocation. Either embed a fixed-size platform file handle in `stream_t`, or pre-allocate a small array of `NextGlkFile` structs at startup.
+
+### Cleanup ordering in glk_stream_close for strtype_File
+
+- **Location:** `nextglk/nextglk.c`, `glk_stream_close()`
+- **Concern:** The platform file handle must be closed *before* calling `gli_delete_stream()` because `gli_delete_stream()` frees the `stream_t` structure. The cleanup sequence is: close platform handle → NULL the `file` pointer → clear any window `echostr` cross-reference → call `gli_delete_stream()` to unlink and free the stream. The `gli_currentstr` clearing is handled inside `gli_delete_stream()` (existing behaviour). If the order were reversed (free first, close second), the `NextGlkFile*` pointer would be accessed after the stream struct is freed, causing a use-after-free.
+- **Linux implementation:** Sequential cleanup with explicit NULL-ing of `file` before `gli_delete_stream()`.
+- **Likely Spectrum Next impact:** Same ordering constraints apply on all platforms. No additional Next-specific concern — this is a correctness requirement regardless of target.
+- **Possible future mitigation:** None needed — the ordering is correct and well-documented.
+
+### Window echostr cross-reference clearing
+
+- **Location:** `nextglk/nextglk.c`, `glk_stream_close()`
+- **Concern:** When closing a file stream, if any window's `echostr` references this stream, the reference must be cleared to avoid a dangling pointer. Currently only `gli_mainwin` is checked (single-window implementation). If multi-window support is added, this would need to iterate all windows.
+- **Linux implementation:** Single check: `if (gli_mainwin && gli_mainwin->echostr == st) gli_mainwin->echostr = NULL;`
+- **Likely Spectrum Next impact:** If multi-window support is added for the Next, the single-window assumption breaks. The fix would be to iterate all windows in a list (similar to `gli_streamlist`). For the current single-window design, this is sufficient.
+- **Possible future mitigation:** When multi-window support is added, replace the single check with a loop over `gli_windowlist` (if implemented) or equivalent.
+
+### malloc in gli_new_stream for stream_t
+
+- **Location:** `nextglk/next_stream.c`, `gli_new_stream()`
+- **Concern:** `gli_new_stream()` allocates a `stream_t` struct via `malloc(sizeof(stream_t))`. On 64-bit Linux, `stream_t` is approximately 120 bytes (disprock, type/mode fields, pointers, buffer fields, linked-list pointers). Each file stream open causes this allocation plus the `NextGlkFile` wrapper allocation from the platform layer.
+- **Linux implementation:** Standard `malloc()` via glibc.
+- **Likely Spectrum Next impact:** `stream_t` on Z80 will be smaller (likely 40–60 bytes depending on pointer sizes). Combined with the `NextGlkFile` wrapper, each file stream open is two heap allocations. With only 0–2 file streams open concurrently (save + transcript), this is not a memory crisis, but the heap fragmentation risk from repeated open/close cycles should be noted.
+- **Possible future mitigation:** Consider a pre-allocated pool of `stream_t` structs or a static array for the small number of concurrently open file streams.
+
+### Stream rock is not stored by gli_new_stream
+
+- **Location:** `nextglk/next_stream.c`, `gli_new_stream()`, and `nextglk/nextglk.c`, `glk_stream_get_rock()`, `glk_stream_iterate()`
+- **Concern:** `gli_new_stream()` accepts a `rock` parameter but discards it with `(void)rock`. The stream's rock field is not currently stored in `stream_t` (there is no `rock` field in the struct). `glk_stream_get_rock()` returns 0 unconditionally. `glk_stream_iterate()` writes 0 to `rockptr`. This is a known gap — the Glk ABI requires rock values on all opaque objects. Filerefs already store their rock correctly; streams and windows do not yet.
+- **Linux implementation:** Rock parameter accepted but discarded.
+- **Likely Spectrum Next impact:** Rock values are used by the game to associate opaque objects with game-level data. If a game relies on stream rock values (uncommon but allowed by the spec), it would receive incorrect data. This should be fixed before declaring Glk API compliance.
+- **Possible future mitigation:** Add a `glui32 rock` field to `stream_t` in `nextglk_internal.h`, store the rock value in `gli_new_stream()`, and return it from `glk_stream_get_rock()` and `glk_stream_iterate()`. This is a Phase 3B or later task.
+
+### glk_stream_open_file error cleanup (platform open succeeds but gli_new_stream fails)
+
+- **Location:** `nextglk/nextglk.c`, `glk_stream_open_file()`
+- **Concern:** If `nextglk_file_open_write()` succeeds but `gli_new_stream()` returns NULL (malloc failure), the platform file handle must be closed before returning NULL to avoid a resource leak. The current implementation does this: `if (!str) { nextglk_file_close(nf); return NULL; }`. This is correct but worth documenting because the dual-allocation pattern (platform malloc + stream malloc) creates this cleanup requirement.
+- **Linux implementation:** Guarded close in the error path.
+- **Likely Spectrum Next impact:** Same resource-leak concern on all platforms. On the Next, malloc failure is more likely due to constrained heap, so this error path may be exercised more frequently.
+- **Possible future mitigation:** None needed — the leak is already prevented.
+
+### glk_fileref_does_file_exist used in test for append mode
+
+- **Location:** `tests/fileio_tests.c`, Phase 3A.4 append stream test
+- **Concern:** The test calls `glk_fileref_does_file_exist()` to verify that an appended file exists on disk after closing the stream. This function was implemented in Phase 3A.2 and uses `access()` on Linux. This is the first test that couples file stream close with fileref existence checking.
+- **Linux implementation:** Standard POSIX `access(path, F_OK)`.
+- **Likely Spectrum Next impact:** Not applicable — tests run on Linux only.
+- **Possible future mitigation:** None needed for tests. For the Next platform, `glk_fileref_does_file_exist` will need a platform-specific implementation (e.g., NextZXOS file query).
+
+### unlink in Phase 3A.4 tests for file cleanup
+
+- **Location:** `tests/fileio_tests.c`, Phase 3A.4 tests
+- **Concern:** Each test creates a file on disk via `glk_fileref_create_by_name()` + `glk_stream_open_file()` and cleans up with `unlink()`. File paths are relative (e.g., `"test3a4write.glkdata"`), so they land in the current working directory. If a test crashes mid-execution, stale files may be left behind.
+- **Linux implementation:** Standard POSIX `unlink()` on relative paths.
+- **Likely Spectrum Next impact:** Not applicable — tests run on Linux only.
+- **Possible future mitigation:** Consider a test helper that registers test files for cleanup via `atexit()`, or use a temporary subdirectory.
+
+### Read mode deferred to Phase 3B
+
+- **Location:** `nextglk/nextglk.c`, `glk_stream_open_file()`
+- **Concern:** `filemode_Read` returns NULL because file reading is not yet implemented. The game's restore path calls `glk_stream_open_file(fref, filemode_Read, 0)`, and a NULL return causes the game to print "Restore failed" and continue. This is the documented graceful failure behaviour for Phase 3A.
+- **Linux implementation:** Immediate return of NULL for `filemode_Read`.
+- **Likely Spectrum Next impact:** No additional concern — the path is not yet implemented on any platform.
+- **Possible future mitigation:** Implement in Phase 3B with `nextglk_file_open_read()`.
