@@ -99,3 +99,26 @@ void nextglk_file_close(
 
     free(file);
 }
+
+uint32_t nextglk_file_get_position(
+    NextGlkFile* file)
+{
+    long pos;
+
+    if (!file || !file->fp)
+        return 0;
+
+    pos = ftell(file->fp);
+    return (pos >= 0) ? (uint32_t)pos : 0;
+}
+
+void nextglk_file_set_position(
+    NextGlkFile* file,
+    int32_t pos,
+    int whence)
+{
+    if (!file || !file->fp)
+        return;
+
+    fseek(file->fp, (long)pos, whence);
+}

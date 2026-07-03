@@ -65,6 +65,14 @@ uint32_t nextglk_file_write(
 void nextglk_file_close(
     NextGlkFile* file);
 
+uint32_t nextglk_file_get_position(
+    NextGlkFile* file);
+
+void nextglk_file_set_position(
+    NextGlkFile* file,
+    int32_t pos,
+    int whence);
+
 /* -------------------------------------------------------------------------
  * Images
  * ------------------------------------------------------------------------- */

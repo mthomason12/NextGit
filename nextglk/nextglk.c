@@ -47,6 +47,7 @@
  */
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include "nextglk_internal.h"
 #include "nextglk.h"
@@ -581,38 +582,82 @@ void glk_stream_close(strid_t str, stream_result_t *result)
 /* -------------------------------------------------------------------------
  * glk_stream_set_position — Set the read/write position of a stream
  *
- * Phase 1 stub: no-op. Stream positioning is not implemented.
+ * For strtype_File streams, uses fseek() via nextglk_file_set_position()
+ * with the platform file handle.  Supports seekmode_Start (SEEK_SET),
+ * seekmode_Current (SEEK_CUR), and seekmode_End (SEEK_END).
+ *
+ * Other stream types are no-ops (window streams don't support positioning;
+ * memory stream positioning is deferred).
  *
  * Parameters:
  *   str      — the stream to position
- *   pos      — the position offset
+ *   pos      — the position offset (may be negative for seekmode_Current/End)
  *   seekmode — seekmode_Start, seekmode_Current, or seekmode_End
  * ------------------------------------------------------------------------- */
 
 void glk_stream_set_position(strid_t str, glsi32 pos, glui32 seekmode)
 {
-    (void)str;
-    (void)pos;
-    (void)seekmode;
-    /* no-op (stub) */
+    stream_t *st = (stream_t *)str;
+
+    if (!st)
+        return;
+
+    if (st->type == strtype_File)
+    {
+        int whence;
+
+        switch (seekmode)
+        {
+            case seekmode_Start:   whence = SEEK_SET; break;
+            case seekmode_Current: whence = SEEK_CUR; break;
+            case seekmode_End:     whence = SEEK_END; break;
+            default:               return;  /* invalid seekmode */
+        }
+
+        nextglk_file_set_position(
+            (NextGlkFile *)st->file, pos, whence);
+    }
+
+    /* Memory and Window stream positioning is deferred — no-op */
 }
 
 /* -------------------------------------------------------------------------
  * glk_stream_get_position — Get the current read/write position of a stream
  *
- * Phase 1 stub: returns 0.
+ * For strtype_File streams, returns the current file position using ftell()
+ * via nextglk_file_get_position().
+ *
+ * For strtype_Window streams, returns the writecount (cumulative bytes output
+ * to the window).
+ *
+ * For other stream types, returns 0.
  *
  * Parameters:
  *   str — the stream to query
  *
  * Returns:
- *   0 (not implemented in Phase 1).
+ *   The current stream position, or 0 on error or for unsupported types.
  * ------------------------------------------------------------------------- */
 
 glui32 glk_stream_get_position(strid_t str)
 {
-    (void)str;
-    return 0;
+    stream_t *st = (stream_t *)str;
+
+    if (!st)
+        return 0;
+
+    switch (st->type)
+    {
+        case strtype_File:
+            return (glui32)nextglk_file_get_position(
+                (NextGlkFile *)st->file);
+
+        case strtype_Window:
+            return st->writecount;
+
+        default:
+            return 0;
+    }
 }
 
 /* -------------------------------------------------------------------------

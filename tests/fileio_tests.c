@@ -1742,5 +1742,336 @@ int fileio_tests_run(void)
 #undef TEST_3A5_APPEND
 #undef TEST_3A5_BINARY
 
+    /* =====================================================================
+     * Phase 3A.6 — File Stream Position Tests
+     * ===================================================================== */
+
+#define TEST_3A6_POS       "/tmp/nextgit-test-3a6-pos.bin"
+#define TEST_3A6_RELATIVE  "/tmp/nextgit-test-3a6-relative.bin"
+#define TEST_3A6_END       "/tmp/nextgit-test-3a6-end.bin"
+#define TEST_3A6_OVERWRITE "/tmp/nextgit-test-3a6-overwrite.bin"
+#define TEST_3A6_MULTI     "/tmp/nextgit-test-3a6-multi.bin"
+#define TEST_3A6_PERSIST   "/tmp/nextgit-test-3a6-persist.bin"
+
+    /* ---- get position on empty file ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a6empty", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.6: created fileref for empty-file position test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.6: opened file stream for empty-file position test");
+
+        glui32 pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 0,
+            "3A.6: position is 0 on newly-opened empty file");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+        unlink("test3a6empty.glkdata");
+    }
+
+    /* ---- position after writes ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a6poswrite", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.6: created fileref for position-after-writes test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.6: opened file stream for position-after-writes test");
+
+        glui32 pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 0,
+            "3A.6: position is 0 before any write");
+
+        glk_put_string_stream(str, "Hello");
+        pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 5,
+            "3A.6: position is 5 after writing \"Hello\"");
+
+        glk_put_string_stream(str, "World");
+        pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 10,
+            "3A.6: position is 10 after writing \"HelloWorld\"");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+        unlink("test3a6poswrite.glkdata");
+    }
+
+    /* ---- seek to start ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a6seekstart", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.6: created fileref for seek-to-start test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.6: opened file stream for seek-to-start test");
+
+        /* Write some data to move past position 0 */
+        glk_put_string_stream(str, "abcdefgh");
+        glui32 pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 8,
+            "3A.6: position is 8 after writing 8 bytes");
+
+        /* Seek to start */
+        glk_stream_set_position(str, 0, seekmode_Start);
+        pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 0,
+            "3A.6: position is 0 after seekmode_Start to 0");
+
+        /* Seek to a positive offset from start */
+        glk_stream_set_position(str, 4, seekmode_Start);
+        pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 4,
+            "3A.6: position is 4 after seekmode_Start to 4");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+        unlink("test3a6seekstart.glkdata");
+    }
+
+    /* ---- seek relative to current ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a6seekcur", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.6: created fileref for seek-relative test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.6: opened file stream for seek-relative test");
+
+        /* Write "Hello" to get to position 5 */
+        glk_put_string_stream(str, "Hello");
+        glui32 pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 5,
+            "3A.6: position is 5 after writing \"Hello\"");
+
+        /* Seek backward 2 bytes relative to current */
+        glk_stream_set_position(str, -2, seekmode_Current);
+        pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 3,
+            "3A.6: position is 3 after seekmode_Current to -2");
+
+        /* Seek forward 4 bytes relative to current */
+        glk_stream_set_position(str, 4, seekmode_Current);
+        pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 7,
+            "3A.6: position is 7 after seekmode_Current to +4");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+        unlink("test3a6seekcur.glkdata");
+    }
+
+    /* ---- seek relative to end ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a6seekend", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.6: created fileref for seek-from-end test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.6: opened file stream for seek-from-end test");
+
+        /* Write 10 bytes */
+        glk_put_string_stream(str, "0123456789");
+        glui32 pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 10,
+            "3A.6: position is 10 after writing 10 bytes");
+
+        /* Seek 3 bytes back from end */
+        glk_stream_set_position(str, -3, seekmode_End);
+        pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 7,
+            "3A.6: position is 7 after seekmode_End to -3");
+
+        /* Seek to end (offset 0 from end) */
+        glk_stream_set_position(str, 0, seekmode_End);
+        pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 10,
+            "3A.6: position is 10 after seekmode_End to 0");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+        unlink("test3a6seekend.glkdata");
+    }
+
+    /* ---- overwrite existing bytes after seek ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a6overwrite", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.6: created fileref for overwrite-after-seek test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.6: opened file stream for overwrite-after-seek test");
+
+        /* Write initial content */
+        glk_put_string_stream(str, "Hello");
+        glui32 pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 5,
+            "3A.6: position is 5 after writing \"Hello\"");
+
+        /* Seek back to start and overwrite */
+        glk_stream_set_position(str, 0, seekmode_Start);
+        pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 0,
+            "3A.6: position is 0 after seek to start");
+
+        /* Overwrite first 3 bytes with "XYZ" */
+        glk_put_string_stream(str, "XYZ");
+        pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 3,
+            "3A.6: position is 3 after writing \"XYZ\"");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+
+        /* Verify file contents: "XYZlo" */
+        FILE *fp = fopen("test3a6overwrite.glkdata", "rb");
+        TEST_ASSERT(fp != NULL,
+            "3A.6: can open file for reading after overwrite");
+        char buf[16] = {0};
+        size_t n = fread(buf, 1, 5, fp);
+        TEST_ASSERT(n == 5,
+            "3A.6: file contains 5 bytes after overwrite");
+        TEST_ASSERT(strcmp(buf, "XYZlo") == 0,
+            "3A.6: file content is \"XYZlo\" after overwriting first 3 bytes of \"Hello\"");
+        fclose(fp);
+        unlink("test3a6overwrite.glkdata");
+    }
+
+    /* ---- multiple seek operations ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a6multiseek", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.6: created fileref for multi-seek test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.6: opened file stream for multi-seek test");
+
+        /* Write "AAAAABBBBBCCCCC" (15 bytes) */
+        glk_put_string_stream(str, "AAAAABBBBBCCCCC");
+        glui32 pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 15,
+            "3A.6: position is 15 after writing 15 bytes");
+
+        /* Seek to position 5 and overwrite "BBBBB" with "XXXXX" */
+        glk_stream_set_position(str, 5, seekmode_Start);
+        pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 5,
+            "3A.6: position is 5 after seek to 5");
+        glk_put_string_stream(str, "XXXXX");
+        pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 10,
+            "3A.6: position is 10 after writing \"XXXXX\"");
+
+        /* Seek to position 10 and overwrite "CCCCC" with "YYYYY" */
+        glk_stream_set_position(str, 10, seekmode_Start);
+        glk_put_string_stream(str, "YYYYY");
+        pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 15,
+            "3A.6: position is 15 after writing \"YYYYY\"");
+
+        /* Seek to position 0 and overwrite "AAAAA" with "ZZZZZ" */
+        glk_stream_set_position(str, 0, seekmode_Start);
+        glk_put_string_stream(str, "ZZZZZ");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+
+        /* Verify file: "ZZZZZXXXXXYYYYY" */
+        FILE *fp = fopen("test3a6multiseek.glkdata", "rb");
+        TEST_ASSERT(fp != NULL,
+            "3A.6: can open file for reading after multi-seek");
+        char buf[32] = {0};
+        size_t n = fread(buf, 1, 15, fp);
+        TEST_ASSERT(n == 15,
+            "3A.6: file contains 15 bytes after multi-seek");
+        TEST_ASSERT(strcmp(buf, "ZZZZZXXXXXYYYYY") == 0,
+            "3A.6: file content is \"ZZZZZXXXXXYYYYY\" after multi-seek overwrites");
+        fclose(fp);
+        unlink("test3a6multiseek.glkdata");
+    }
+
+    /* ---- invalid stream safety (NULL stream) ---- */
+
+    {
+        /* glk_stream_get_position(NULL) should return 0 */
+        glui32 pos = glk_stream_get_position(NULL);
+        TEST_ASSERT(pos == 0,
+            "3A.6: glk_stream_get_position(NULL) returns 0");
+
+        /* glk_stream_set_position(NULL, ...) should not crash */
+        glk_stream_set_position(NULL, 0, seekmode_Start);
+        TEST_ASSERT(1,
+            "3A.6: glk_stream_set_position(NULL, ...) does not crash");
+    }
+
+    /* ---- file position persistence -- reopened file starts at 0 ---- */
+
+    {
+        frefid_t fref = glk_fileref_create_by_name(
+            fileusage_Data, "test3a6persist", 0);
+        TEST_ASSERT(fref != NULL,
+            "3A.6: created fileref for position persistence test");
+
+        /* First session: write data */
+        strid_t str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.6: opened file stream (first session)");
+
+        glk_put_string_stream(str, "Session One Data");
+        glui32 pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 16,
+            "3A.6: position is 16 after writing 16 bytes in first session");
+
+        glk_stream_close(str, NULL);
+
+        /* Reopen the same file (truncates with filemode_Write) */
+        str = glk_stream_open_file(fref, filemode_Write, 0);
+        TEST_ASSERT(str != NULL,
+            "3A.6: reopened file stream (second session)");
+
+        pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 0,
+            "3A.6: position is 0 after reopening file (truncated)");
+
+        glk_put_string_stream(str, "NewData");
+        pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 7,
+            "3A.6: position is 7 after writing 7 bytes in second session");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+        unlink("test3a6persist.glkdata");
+    }
+
+#undef TEST_3A6_POS
+#undef TEST_3A6_RELATIVE
+#undef TEST_3A6_END
+#undef TEST_3A6_OVERWRITE
+#undef TEST_3A6_MULTI
+#undef TEST_3A6_PERSIST
+
     return 0;
 }
