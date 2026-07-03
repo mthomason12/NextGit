@@ -42,6 +42,7 @@ struct glk_stream_struct {
     int type;                   /* strtype_Window / strtype_File / strtype_Memory */
     int unicode;                /* 0 = 1-byte chars, 1 = 4-byte */
     int readable, writable;
+    glui32 rock;                /* game-supplied rock value */
     glui32 readcount, writecount;   /* for stream_result_t */
 
     /* For strtype_Window */

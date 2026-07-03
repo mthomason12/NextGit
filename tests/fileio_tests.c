@@ -1232,19 +1232,28 @@ int fileio_tests_run(void)
             "3A.4: glk_stream_open_file(NULL, ...) returns NULL");
     }
 
-    /* ---- read mode returns NULL ---- */
+    /* ---- read mode opens successfully ---- */
 
     {
+        /* First create the file on disk so read mode can open it */
+        NextGlkFile *wf = nextglk_file_open_write("test3a4read.glkdata");
+        TEST_ASSERT(wf != NULL,
+            "3A.4: created file on disk for read-mode test");
+        nextglk_file_write(wf, "test", 4);
+        nextglk_file_close(wf);
+
         frefid_t fref = glk_fileref_create_by_name(
             fileusage_Data, "test3a4read", 0);
         TEST_ASSERT(fref != NULL,
             "3A.4: created fileref for read-mode test");
 
         strid_t str = glk_stream_open_file(fref, filemode_Read, 0);
-        TEST_ASSERT(str == NULL,
-            "3A.4: glk_stream_open_file(filemode_Read) returns NULL (deferred to Phase 3B)");
+        TEST_ASSERT(str != NULL,
+            "3A.4: glk_stream_open_file(filemode_Read) returns non-NULL (Phase 3B.2)");
 
+        glk_stream_close(str, NULL);
         glk_fileref_destroy(fref);
+        unlink("test3a4read.glkdata");
     }
 
     /* ---- stream registered in gli_streamlist ---- */
@@ -1358,7 +1367,7 @@ int fileio_tests_run(void)
         unlink("test3a4current.glkdata");
     }
 
-    /* ---- stream rock preserved (gaps documented) ---- */
+    /* ---- stream rock preserved ---- */
 
     {
         frefid_t fref = glk_fileref_create_by_name(
@@ -1371,9 +1380,8 @@ int fileio_tests_run(void)
         TEST_ASSERT(str != NULL,
             "3A.4: opened file stream with rock=42");
 
-        /* glk_stream_get_rock currently returns 0 (rock storage is a known gap) */
-        TEST_ASSERT(glk_stream_get_rock(str) == 0,
-            "3A.4: glk_stream_get_rock returns 0 (rock storage deferred)");
+        TEST_ASSERT(glk_stream_get_rock(str) == 42,
+            "3A.4: glk_stream_get_rock returns 42 (Phase 3B.2)");
 
         glk_stream_close(str, NULL);
 
@@ -2072,6 +2080,681 @@ int fileio_tests_run(void)
 #undef TEST_3A6_OVERWRITE
 #undef TEST_3A6_MULTI
 #undef TEST_3A6_PERSIST
+
+    /* =====================================================================
+     * Phase 3B.1 — Platform File Read I/O Tests
+     * ===================================================================== */
+
+#define TEST_3B1_FILE      "/tmp/nextgit-test-3b1-read.bin"
+#define TEST_3B1_SMALL     "/tmp/nextgit-test-3b1-small.bin"
+#define TEST_3B1_ENTIRE    "/tmp/nextgit-test-3b1-entire.bin"
+#define TEST_3B1_PARTIAL   "/tmp/nextgit-test-3b1-partial.bin"
+#define TEST_3B1_EOF       "/tmp/nextgit-test-3b1-eof.bin"
+#define TEST_3B1_BINARY    "/tmp/nextgit-test-3b1-binary.bin"
+#define TEST_3B1_REPEATED  "/tmp/nextgit-test-3b1-repeated.bin"
+
+    /* ---- open_read existing file ---- */
+
+    {
+        /* Create a file first via the write path */
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B1_FILE);
+        TEST_ASSERT(wf != NULL,
+            "3B.1: open_write for read test succeeds");
+        nextglk_file_write(wf, "read test data", 14);
+        nextglk_file_close(wf);
+
+        /* Read it back */
+        NextGlkFile *rf = nextglk_file_open_read(TEST_3B1_FILE);
+        TEST_ASSERT(rf != NULL,
+            "3B.1: nextglk_file_open_read() opens existing file");
+
+        char buf[32] = {0};
+        uint32_t n = nextglk_file_read(rf, buf, sizeof(buf) - 1);
+        TEST_ASSERT(n == 14,
+            "3B.1: read returns 14 bytes from existing file");
+        TEST_ASSERT(strcmp(buf, "read test data") == 0,
+            "3B.1: content matches expected data");
+
+        nextglk_file_close(rf);
+        unlink(TEST_3B1_FILE);
+    }
+
+    /* ---- open_read missing file ---- */
+
+    {
+        NextGlkFile *f = nextglk_file_open_read(
+            "/tmp/nextgit-nonexistent-file-3b1.bin");
+        TEST_ASSERT(f == NULL,
+            "3B.1: nextglk_file_open_read() on nonexistent file returns NULL");
+    }
+
+    /* ---- read small buffer ---- */
+
+    {
+        /* Create test file with known content */
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B1_SMALL);
+        TEST_ASSERT(wf != NULL,
+            "3B.1: open_write for small buffer test succeeds");
+        const char *data = "ABCDEFGHIJKLMNOP";
+        nextglk_file_write(wf, data, 16);
+        nextglk_file_close(wf);
+
+        /* Read it back */
+        NextGlkFile *rf = nextglk_file_open_read(TEST_3B1_SMALL);
+        TEST_ASSERT(rf != NULL,
+            "3B.1: open_read for small buffer test succeeds");
+
+        char buf[32] = {0};
+        uint32_t n = nextglk_file_read(rf, buf, 16);
+        TEST_ASSERT(n == 16,
+            "3B.1: read returns 16 bytes");
+        TEST_ASSERT(memcmp(buf, data, 16) == 0,
+            "3B.1: read content matches written data");
+
+        nextglk_file_close(rf);
+        unlink(TEST_3B1_SMALL);
+    }
+
+    /* ---- read entire file ---- */
+
+    {
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B1_ENTIRE);
+        TEST_ASSERT(wf != NULL,
+            "3B.1: open_write for entire file test succeeds");
+        const char *data = "This is the complete file content for testing.";
+        size_t dataLen = strlen(data);
+        nextglk_file_write(wf, data, dataLen);
+        nextglk_file_close(wf);
+
+        NextGlkFile *rf = nextglk_file_open_read(TEST_3B1_ENTIRE);
+        TEST_ASSERT(rf != NULL,
+            "3B.1: open_read for entire file test succeeds");
+
+        /* Read in one shot */
+        char buf[128] = {0};
+        uint32_t n = nextglk_file_read(rf, buf, sizeof(buf) - 1);
+        TEST_ASSERT(n == dataLen,
+            "3B.1: read entire file returns correct byte count");
+        TEST_ASSERT(strcmp(buf, data) == 0,
+            "3B.1: entire file content matches");
+
+        nextglk_file_close(rf);
+        unlink(TEST_3B1_ENTIRE);
+    }
+
+    /* ---- partial reads ---- */
+
+    {
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B1_PARTIAL);
+        TEST_ASSERT(wf != NULL,
+            "3B.1: open_write for partial read test succeeds");
+        nextglk_file_write(wf, "0123456789", 10);
+        nextglk_file_close(wf);
+
+        NextGlkFile *rf = nextglk_file_open_read(TEST_3B1_PARTIAL);
+        TEST_ASSERT(rf != NULL,
+            "3B.1: open_read for partial read test succeeds");
+
+        /* Read first 3 bytes */
+        char buf[16] = {0};
+        uint32_t n = nextglk_file_read(rf, buf, 3);
+        TEST_ASSERT(n == 3,
+            "3B.1: first partial read returns 3 bytes");
+        TEST_ASSERT(memcmp(buf, "012", 3) == 0,
+            "3B.1: first chunk is \"012\"");
+
+        /* Read remaining 7 bytes */
+        n = nextglk_file_read(rf, buf, 7);
+        TEST_ASSERT(n == 7,
+            "3B.1: second partial read returns 7 bytes");
+        TEST_ASSERT(memcmp(buf, "3456789", 7) == 0,
+            "3B.1: second chunk is \"3456789\"");
+
+        /* Third read: should be EOF */
+        n = nextglk_file_read(rf, buf, 4);
+        TEST_ASSERT(n == 0,
+            "3B.1: third read returns 0 (EOF after all data consumed)");
+
+        nextglk_file_close(rf);
+        unlink(TEST_3B1_PARTIAL);
+    }
+
+    /* ---- EOF handling ---- */
+
+    {
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B1_EOF);
+        TEST_ASSERT(wf != NULL,
+            "3B.1: open_write for EOF test succeeds");
+        nextglk_file_write(wf, "HELLO", 5);
+        nextglk_file_close(wf);
+
+        NextGlkFile *rf = nextglk_file_open_read(TEST_3B1_EOF);
+        TEST_ASSERT(rf != NULL,
+            "3B.1: open_read for EOF test succeeds");
+
+        /* Request more bytes than the file contains */
+        char buf[32] = {0};
+        uint32_t n = nextglk_file_read(rf, buf, 10);
+        TEST_ASSERT(n == 5,
+            "3B.1: read with oversized buffer returns only available bytes (5)");
+        TEST_ASSERT(memcmp(buf, "HELLO", 5) == 0,
+            "3B.1: data matches despite requesting more than available");
+
+        /* Subsequent read after partial consumption should return 0 */
+        n = nextglk_file_read(rf, buf, 4);
+        TEST_ASSERT(n == 0,
+            "3B.1: read after EOF returns 0");
+
+        nextglk_file_close(rf);
+        unlink(TEST_3B1_EOF);
+    }
+
+    /* ---- binary data round-trip ---- */
+
+    {
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B1_BINARY);
+        TEST_ASSERT(wf != NULL,
+            "3B.1: open_write for binary round-trip test succeeds");
+
+        const unsigned char bin[] = { 0x00, 0xFF, 'B', 0x7F, 0x80, 0x01, 0xFE };
+        nextglk_file_write(wf, bin, 7);
+        nextglk_file_close(wf);
+
+        NextGlkFile *rf = nextglk_file_open_read(TEST_3B1_BINARY);
+        TEST_ASSERT(rf != NULL,
+            "3B.1: open_read for binary round-trip test succeeds");
+
+        unsigned char buf[16] = {0};
+        uint32_t n = nextglk_file_read(rf, buf, 7);
+        TEST_ASSERT(n == 7,
+            "3B.1: binary read returns 7 bytes");
+        TEST_ASSERT(memcmp(buf, bin, 7) == 0,
+            "3B.1: binary data round-trips correctly (0x00, 0xFF, 0x80 preserved)");
+
+        nextglk_file_close(rf);
+        unlink(TEST_3B1_BINARY);
+    }
+
+    /* ---- repeated reads ---- */
+
+    {
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B1_REPEATED);
+        TEST_ASSERT(wf != NULL,
+            "3B.1: open_write for repeated reads test succeeds");
+        nextglk_file_write(wf, "12345678", 8);
+        nextglk_file_close(wf);
+
+        NextGlkFile *rf = nextglk_file_open_read(TEST_3B1_REPEATED);
+        TEST_ASSERT(rf != NULL,
+            "3B.1: open_read for repeated reads test succeeds");
+
+        /* Read 4 bytes, then 4 more */
+        char buf[8] = {0};
+        uint32_t n = nextglk_file_read(rf, buf, 4);
+        TEST_ASSERT(n == 4,
+            "3B.1: first repeated read returns 4 bytes");
+        TEST_ASSERT(memcmp(buf, "1234", 4) == 0,
+            "3B.1: first chunk is \"1234\"");
+
+        n = nextglk_file_read(rf, buf, 4);
+        TEST_ASSERT(n == 4,
+            "3B.1: second repeated read returns 4 bytes");
+        TEST_ASSERT(memcmp(buf, "5678", 4) == 0,
+            "3B.1: second chunk is \"5678\"");
+
+        /* Third read should return 0 */
+        n = nextglk_file_read(rf, buf, 4);
+        TEST_ASSERT(n == 0,
+            "3B.1: third repeated read returns 0 (EOF)");
+
+        nextglk_file_close(rf);
+        unlink(TEST_3B1_REPEATED);
+    }
+
+    /* ---- NULL safety for read ---- */
+
+    {
+        /* nextglk_file_read(NULL, ...) returns 0 */
+        char buf[8];
+        uint32_t n = nextglk_file_read(NULL, buf, 4);
+        TEST_ASSERT(n == 0,
+            "3B.1: nextglk_file_read(NULL, ...) returns 0");
+
+        /* nextglk_file_read(f, NULL, ...) returns 0 */
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B1_FILE);
+        TEST_ASSERT(wf != NULL,
+            "3B.1: open_write for NULL buffer read test succeeds");
+        nextglk_file_write(wf, "data", 4);
+        nextglk_file_close(wf);
+
+        NextGlkFile *rf = nextglk_file_open_read(TEST_3B1_FILE);
+        TEST_ASSERT(rf != NULL,
+            "3B.1: open_read for NULL buffer read test succeeds");
+
+        n = nextglk_file_read(rf, NULL, 4);
+        TEST_ASSERT(n == 0,
+            "3B.1: nextglk_file_read(f, NULL, ...) returns 0");
+
+        /* nextglk_file_read(f, buf, 0) returns 0 */
+        n = nextglk_file_read(rf, buf, 0);
+        TEST_ASSERT(n == 0,
+            "3B.1: nextglk_file_read(f, buf, 0) returns 0");
+
+        nextglk_file_close(rf);
+        unlink(TEST_3B1_FILE);
+    }
+
+    /* ---- open_read with NULL path ---- */
+
+    {
+        NextGlkFile *f = nextglk_file_open_read(NULL);
+        TEST_ASSERT(f == NULL,
+            "3B.1: nextglk_file_open_read(NULL) returns NULL");
+    }
+
+#undef TEST_3B1_FILE
+#undef TEST_3B1_SMALL
+#undef TEST_3B1_ENTIRE
+#undef TEST_3B1_PARTIAL
+#undef TEST_3B1_EOF
+#undef TEST_3B1_BINARY
+#undef TEST_3B1_REPEATED
+
+    /* =====================================================================
+     * Phase 3B.2 — glk_stream_open_file() Read Mode Tests
+     * ===================================================================== */
+
+#define TEST_3B2_FILE       "/tmp/nextgit-test-3b2-stream.bin"
+#define TEST_3B2_EMPTY      "/tmp/nextgit-test-3b2-empty.bin"
+#define TEST_3B2_BINARY     "/tmp/nextgit-test-3b2-binary.bin"
+#define TEST_3B2_REOPEN     "/tmp/nextgit-test-3b2-reopen.bin"
+
+    /* ---- Open existing file for reading ---- */
+
+    {
+        /* Create a file with known content */
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B2_FILE);
+        TEST_ASSERT(wf != NULL,
+            "3B.2: open_write for stream read test succeeds");
+        nextglk_file_write(wf, "Hello, NextGit Stream!", 20);
+        nextglk_file_close(wf);
+
+        /* Create fileref for the file */
+        fileref_t *fref = gli_new_fileref(TEST_3B2_FILE, fileusage_Data, 0);
+        TEST_ASSERT(fref != NULL,
+            "3B.2: fileref created for open stream test");
+
+        /* Open stream for reading */
+        strid_t str = glk_stream_open_file(fref, filemode_Read, 123);
+        TEST_ASSERT(str != NULL,
+            "3B.2: glk_stream_open_file(filemode_Read) returns non-NULL");
+        TEST_ASSERT(((stream_t *)str)->type == strtype_File,
+            "3B.2: stream type is strtype_File");
+        TEST_ASSERT(((stream_t *)str)->readable == 1,
+            "3B.2: stream is readable");
+        TEST_ASSERT(((stream_t *)str)->writable == 0,
+            "3B.2: stream is not writable");
+        TEST_ASSERT(((stream_t *)str)->file != NULL,
+            "3B.2: stream has platform file handle");
+
+        /* Clean up */
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+        unlink(TEST_3B2_FILE);
+    }
+
+    /* ---- Open missing file returns NULL ---- */
+
+    {
+        fileref_t *fref = gli_new_fileref(
+            "/tmp/nextgit-nonexistent-3b2.dat", fileusage_Data, 0);
+        TEST_ASSERT(fref != NULL,
+            "3B.2: fileref created for missing file test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Read, 0);
+        TEST_ASSERT(str == NULL,
+            "3B.2: glk_stream_open_file(filemode_Read) on missing file returns NULL");
+
+        glk_fileref_destroy(fref);
+    }
+
+    /* ---- NULL fref returns NULL ---- */
+
+    {
+        strid_t str = glk_stream_open_file(NULL, filemode_Read, 0);
+        TEST_ASSERT(str == NULL,
+            "3B.2: glk_stream_open_file(NULL, filemode_Read) returns NULL");
+    }
+
+    /* ---- Initial stream position is zero ---- */
+
+    {
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B2_FILE);
+        TEST_ASSERT(wf != NULL,
+            "3B.2: open_write for position test succeeds");
+        nextglk_file_write(wf, "abcdefghij", 10);
+        nextglk_file_close(wf);
+
+        fileref_t *fref = gli_new_fileref(TEST_3B2_FILE, fileusage_Data, 0);
+        TEST_ASSERT(fref != NULL,
+            "3B.2: fileref created for position test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Read, 0);
+        TEST_ASSERT(str != NULL,
+            "3B.2: stream opened for position test");
+
+        glui32 pos = glk_stream_get_position(str);
+        TEST_ASSERT(pos == 0,
+            "3B.2: initial stream position is zero");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+        unlink(TEST_3B2_FILE);
+    }
+
+    /* ---- Rock value is preserved ---- */
+
+    {
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B2_FILE);
+        TEST_ASSERT(wf != NULL,
+            "3B.2: open_write for rock test succeeds");
+        nextglk_file_write(wf, "test", 4);
+        nextglk_file_close(wf);
+
+        fileref_t *fref = gli_new_fileref(TEST_3B2_FILE, fileusage_Data, 0);
+        TEST_ASSERT(fref != NULL,
+            "3B.2: fileref created for rock test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Read, 999);
+        TEST_ASSERT(str != NULL,
+            "3B.2: stream opened with rock 999");
+
+        glui32 rock = glk_stream_get_rock(str);
+        TEST_ASSERT(rock == 999,
+            "3B.2: stream rock value is 999");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+        unlink(TEST_3B2_FILE);
+    }
+
+    /* ---- Two independent file streams opened simultaneously ---- */
+
+    {
+        NextGlkFile *wf1 = nextglk_file_open_write(TEST_3B2_FILE);
+        TEST_ASSERT(wf1 != NULL,
+            "3B.2: open_write for file 1 succeeds");
+        nextglk_file_write(wf1, "file1data", 8);
+        nextglk_file_close(wf1);
+
+        NextGlkFile *wf2 = nextglk_file_open_write("/tmp/nextgit-test-3b2-file2.bin");
+        TEST_ASSERT(wf2 != NULL,
+            "3B.2: open_write for file 2 succeeds");
+        nextglk_file_write(wf2, "file2data", 8);
+        nextglk_file_close(wf2);
+
+        fileref_t *fref1 = gli_new_fileref(TEST_3B2_FILE, fileusage_Data, 0);
+        fileref_t *fref2 = gli_new_fileref(
+            "/tmp/nextgit-test-3b2-file2.bin", fileusage_Data, 0);
+        TEST_ASSERT(fref1 != NULL && fref2 != NULL,
+            "3B.2: both filerefs created");
+
+        strid_t str1 = glk_stream_open_file(fref1, filemode_Read, 100);
+        strid_t str2 = glk_stream_open_file(fref2, filemode_Read, 200);
+        TEST_ASSERT(str1 != NULL,
+            "3B.2: first stream opened");
+        TEST_ASSERT(str2 != NULL,
+            "3B.2: second stream opened");
+        TEST_ASSERT(str1 != str2,
+            "3B.2: streams are distinct");
+
+        TEST_ASSERT(glk_stream_get_rock(str1) == 100,
+            "3B.2: first stream rock is 100");
+        TEST_ASSERT(glk_stream_get_rock(str2) == 200,
+            "3B.2: second stream rock is 200");
+
+        glk_stream_close(str1, NULL);
+        glk_stream_close(str2, NULL);
+        glk_fileref_destroy(fref1);
+        glk_fileref_destroy(fref2);
+        unlink(TEST_3B2_FILE);
+        unlink("/tmp/nextgit-test-3b2-file2.bin");
+    }
+
+    /* ---- Repeated open/close cycles succeed ---- */
+
+    {
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B2_REOPEN);
+        TEST_ASSERT(wf != NULL,
+            "3B.2: open_write for reopen test succeeds");
+        nextglk_file_write(wf, "reopen-data", 10);
+        nextglk_file_close(wf);
+
+        fileref_t *fref = gli_new_fileref(TEST_3B2_REOPEN, fileusage_Data, 0);
+        TEST_ASSERT(fref != NULL,
+            "3B.2: fileref created for reopen test");
+
+        /* First open/close */
+        strid_t str1 = glk_stream_open_file(fref, filemode_Read, 0);
+        TEST_ASSERT(str1 != NULL,
+            "3B.2: first open succeeds");
+        glk_stream_close(str1, NULL);
+
+        /* Second open/close */
+        strid_t str2 = glk_stream_open_file(fref, filemode_Read, 0);
+        TEST_ASSERT(str2 != NULL,
+            "3B.2: second open succeeds");
+        glk_stream_close(str2, NULL);
+
+        /* Third open/close */
+        strid_t str3 = glk_stream_open_file(fref, filemode_Read, 0);
+        TEST_ASSERT(str3 != NULL,
+            "3B.2: third open succeeds");
+        glk_stream_close(str3, NULL);
+
+        glk_fileref_destroy(fref);
+        unlink(TEST_3B2_REOPEN);
+    }
+
+    /* ---- Empty file opens successfully ---- */
+
+    {
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B2_EMPTY);
+        TEST_ASSERT(wf != NULL,
+            "3B.2: open_write for empty file test succeeds");
+        nextglk_file_close(wf);
+
+        fileref_t *fref = gli_new_fileref(TEST_3B2_EMPTY, fileusage_Data, 0);
+        TEST_ASSERT(fref != NULL,
+            "3B.2: fileref created for empty file test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Read, 0);
+        TEST_ASSERT(str != NULL,
+            "3B.2: opening empty file succeeds");
+        TEST_ASSERT(((stream_t *)str)->file != NULL,
+            "3B.2: empty file stream has platform file handle");
+        TEST_ASSERT(glk_stream_get_position(str) == 0,
+            "3B.2: empty file stream position is zero");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+        unlink(TEST_3B2_EMPTY);
+    }
+
+    /* ---- Binary file opens successfully ---- */
+
+    {
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B2_BINARY);
+        TEST_ASSERT(wf != NULL,
+            "3B.2: open_write for binary file test succeeds");
+        unsigned char binary_data[] = { 0x00, 0xFF, 0x7F, 0x80, 0x55, 0xAA };
+        nextglk_file_write(wf, binary_data, sizeof(binary_data));
+        nextglk_file_close(wf);
+
+        fileref_t *fref = gli_new_fileref(TEST_3B2_BINARY, fileusage_Data, 0);
+        TEST_ASSERT(fref != NULL,
+            "3B.2: fileref created for binary file test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Read, 0);
+        TEST_ASSERT(str != NULL,
+            "3B.2: opening binary file succeeds");
+        TEST_ASSERT(((stream_t *)str)->file != NULL,
+            "3B.2: binary file stream has platform file handle");
+        TEST_ASSERT(glk_stream_get_position(str) == 0,
+            "3B.2: binary file stream position is zero");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+        unlink(TEST_3B2_BINARY);
+    }
+
+    /* ---- glk_stream_open_file with NULL filename in fref returns NULL ---- */
+
+    {
+        /* Create a fileref then null out its filename (use internal access) */
+        fileref_t *fref = gli_new_fileref("dummy.null", fileusage_Data, 0);
+        TEST_ASSERT(fref != NULL,
+            "3B.2: fileref created for NULL filename test");
+
+        /* Free the original filename and set to NULL to simulate edge case */
+        free(fref->filename);
+        fref->filename = NULL;
+
+        strid_t str = glk_stream_open_file(fref, filemode_Read, 0);
+        TEST_ASSERT(str == NULL,
+            "3B.2: glk_stream_open_file with NULL filename returns NULL");
+
+        /* Restore filename so gli_delete_fileref doesn't crash */
+        fref->filename = malloc(16);
+        if (fref->filename)
+            strcpy(fref->filename, "dummy.null");
+        glk_fileref_destroy(fref);
+    }
+
+    /* ---- glk_stream_open_file with invalid fmode returns NULL ---- */
+
+    {
+        fileref_t *fref = gli_new_fileref(TEST_3B2_FILE, fileusage_Data, 0);
+        TEST_ASSERT(fref != NULL,
+            "3B.2: fileref created for invalid fmode test");
+
+        /* Create the file so the platform open would succeed if mode were valid */
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B2_FILE);
+        TEST_ASSERT(wf != NULL,
+            "3B.2: setup file for invalid fmode test");
+        nextglk_file_write(wf, "x", 1);
+        nextglk_file_close(wf);
+
+        strid_t str = glk_stream_open_file(fref, 0x99, 0);
+        TEST_ASSERT(str == NULL,
+            "3B.2: glk_stream_open_file with invalid fmode returns NULL");
+
+        glk_fileref_destroy(fref);
+        unlink(TEST_3B2_FILE);
+    }
+
+    /* ---- Stream iteration works with read-mode file streams ---- */
+
+    {
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B2_FILE);
+        TEST_ASSERT(wf != NULL,
+            "3B.2: setup file for iteration test");
+        nextglk_file_write(wf, "iteration-test", 13);
+        nextglk_file_close(wf);
+
+        fileref_t *fref = gli_new_fileref(TEST_3B2_FILE, fileusage_Data, 0);
+        TEST_ASSERT(fref != NULL,
+            "3B.2: fileref created for iteration test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Read, 42);
+        TEST_ASSERT(str != NULL,
+            "3B.2: stream opened for iteration test");
+
+        /* Verify rock via iteration */
+        glui32 rock = 0;
+        strid_t found = NULL;
+        strid_t iter = glk_stream_iterate(NULL, &rock);
+        while (iter) {
+            if (iter == str)
+                found = iter;
+            iter = glk_stream_iterate(iter, &rock);
+        }
+        TEST_ASSERT(found == str,
+            "3B.2: file stream found via iteration");
+        TEST_ASSERT(rock == 0,
+            "3B.2: rockptr returns 0 after iteration ends");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+        unlink(TEST_3B2_FILE);
+    }
+
+    /* ---- Stream close cleans up file handle ---- */
+
+    {
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B2_FILE);
+        TEST_ASSERT(wf != NULL,
+            "3B.2: setup file for close cleanup test");
+        nextglk_file_write(wf, "cleanup", 6);
+        nextglk_file_close(wf);
+
+        fileref_t *fref = gli_new_fileref(TEST_3B2_FILE, fileusage_Data, 0);
+        TEST_ASSERT(fref != NULL,
+            "3B.2: fileref created for cleanup test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Read, 0);
+        TEST_ASSERT(str != NULL,
+            "3B.2: stream opened for cleanup test");
+        TEST_ASSERT(((stream_t *)str)->file != NULL,
+            "3B.2: file handle is set before close");
+
+        glk_stream_close(str, NULL);
+
+        /* After close, verify stream was removed from list (should not iterate) */
+        int found = 0;
+        strid_t iter = glk_stream_iterate(NULL, NULL);
+        while (iter) {
+            if (iter == str)
+                found = 1;
+            iter = glk_stream_iterate(iter, NULL);
+        }
+        TEST_ASSERT(found == 0,
+            "3B.2: closed stream is removed from stream list");
+
+        glk_fileref_destroy(fref);
+        unlink(TEST_3B2_FILE);
+    }
+
+    /* ---- glk_stream_get_position returns 0 for read stream at start ---- */
+
+    {
+        NextGlkFile *wf = nextglk_file_open_write(TEST_3B2_FILE);
+        TEST_ASSERT(wf != NULL,
+            "3B.2: setup file for get_position test");
+        nextglk_file_write(wf, "0123456789", 10);
+        nextglk_file_close(wf);
+
+        fileref_t *fref = gli_new_fileref(TEST_3B2_FILE, fileusage_Data, 0);
+        TEST_ASSERT(fref != NULL,
+            "3B.2: fileref created for get_position test");
+
+        strid_t str = glk_stream_open_file(fref, filemode_Read, 0);
+        TEST_ASSERT(str != NULL,
+            "3B.2: stream opened for get_position test");
+        TEST_ASSERT(glk_stream_get_position(str) == 0,
+            "3B.2: get_position is 0 at stream start");
+        TEST_ASSERT(((stream_t *)str)->readcount == 0,
+            "3B.2: readcount is 0 at stream start");
+
+        glk_stream_close(str, NULL);
+        glk_fileref_destroy(fref);
+        unlink(TEST_3B2_FILE);
+    }
+
+#undef TEST_3B2_FILE
+#undef TEST_3B2_EMPTY
+#undef TEST_3B2_BINARY
+#undef TEST_3B2_REOPEN
 
     return 0;
 }

@@ -31,8 +31,6 @@ stream_t *gli_new_stream(int type, int readable, int writable, glui32 rock)
 {
     stream_t *str;
 
-    (void)rock;  /* rock value is stored for future use */
-
     str = (stream_t *)malloc(sizeof(stream_t));
     if (!str)
         return NULL;
@@ -43,6 +41,7 @@ stream_t *gli_new_stream(int type, int readable, int writable, glui32 rock)
     str->unicode = 0;
     str->readable = readable;
     str->writable = writable;
+    str->rock = rock;
     str->readcount = 0;
     str->writecount = 0;
     str->win = NULL;
@@ -155,7 +154,7 @@ strid_t glk_stream_iterate(strid_t str, glui32 *rockptr)
 
     if (s) {
         if (rockptr)
-            *rockptr = 0;  /* rock value — currently always 0 */
+            *rockptr = s->rock;
         return s;
     }
     else {
@@ -174,8 +173,10 @@ strid_t glk_stream_iterate(strid_t str, glui32 *rockptr)
 
 glui32 glk_stream_get_rock(strid_t str)
 {
-    (void)str;  /* stub — rock value not yet implemented */
-    return 0;
+    stream_t *s = (stream_t *)str;
+    if (!s)
+        return 0;
+    return s->rock;
 }
 
 /* =========================================================================

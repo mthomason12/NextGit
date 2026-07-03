@@ -381,3 +381,60 @@ Priority:
 - **Linux implementation:** Single `fwrite()` call for the entire buffer, buffered by glibc's stdio (typically 4 KB or 8 KB buffer).
 - **Likely Spectrum Next impact:** On NextZXOS, the stdio implementation may have a smaller internal buffer or may write directly to SD card without buffering. Large `fwrite()` calls could be slow or could fail if the underlying filesystem has transfer size limits. The z88dk stdio may split large writes internally, but this should be verified on real hardware.
 - **Possible future mitigation:** Add a platform-specific write loop in `nextglk_file_write()` that splits large writes into smaller chunks (e.g., 512 bytes or 4 KB at a time) for SD card compatibility.
+
+---
+
+## Phase 3B.2 — glk_stream_open_file() Read Mode
+
+### Stream ownership of file handles
+
+- **Location:** `nextglk/nextglk.c`, `glk_stream_open_file()`, and `nextglk/next_stream.c`, `gli_delete_stream()` / `glk_stream_close()`
+- **Concern:** The stream object owns the `NextGlkFile*` handle. When `glk_stream_open_file()` successfully opens a file, it stores the handle in `str->file`. When the stream is closed via `glk_stream_close()`, the handle is closed via `nextglk_file_close()` and set to NULL before calling `gli_delete_stream()`. This ensures the file is always closed when the stream is destroyed. The separation between the Glk stream layer and the NextGlk platform file layer is clean: the stream layer only knows about `NextGlkFile*` as an opaque pointer, and delegates all actual I/O to the platform layer.
+- **Linux implementation:** The stream holds a `NextGlkFile*` pointer (which wraps a `FILE*`). `glk_stream_close()` calls `nextglk_file_close()` which calls `fclose()` and `free()`.
+- **Likely Spectrum Next impact:** On NextZXOS, closing a file may require different semantics (e.g., flushing buffers to SD card). The separation of layers means only `nextglk_file_close()` needs to change, not the stream layer.
+- **Possible future mitigation:** None required — the layer separation is already correct for portability.
+
+### File handle lifetime
+
+- **Location:** `nextglk/nextglk.c`, `glk_stream_open_file()` and `glk_stream_close()`
+- **Concern:** The file handle lifetime is tied to the stream lifetime. The stream is created by `gli_new_stream()` (which allocates + registers with dispatch layer + inserts into linked list) and destroyed by `gli_delete_stream()` (which unregisters + unlinks + frees). The platform file handle is opened after stream creation and closed before stream destruction. This order is correct: if stream allocation fails, the platform file handle is closed immediately (no leak). If the platform open fails, no stream is created (NULL returned). This pattern avoids the common bug where a file handle leaks on stream allocation failure.
+- **Linux implementation:** `glk_stream_open_file()`: allocate stream → if fail, close file → return NULL. On success, attach file to stream. `glk_stream_close()`: close file → clear file → delete stream.
+- **Likely Spectrum Next impact:** Same pattern should work on NextZXOS. The key requirement is that `nextglk_file_close()` also frees the `NextGlkFile` struct itself (it calls `free(file)` after `fclose()`).
+- **Possible future mitigation:** None required — the pattern is sound.
+
+### fopen/fclose portability
+
+- **Location:** `nextglk/nextglk_file.c`, `nextglk_file_open_read()`, `nextglk_file_close()`
+- **Concern:** The platform file layer uses POSIX `fopen(path, "rb")` for reading. On NextZXOS, the standard library may not support `fopen()` with the same mode strings, or may require different path handling (e.g., drive letters, forward-slash vs backslash, 8.3 filenames). Additionally, `fclose()` may behave differently on a filesystem without proper buffering (e.g., SD card raw access).
+- **Linux implementation:** Standard glibc `fopen()` / `fclose()` with `"rb"` mode.
+- **Likely Spectrum Next impact:** NextZXOS uses a FAT filesystem with POSIX-like file operations via z88dk's stdio. The `"rb"` and `"wb"` mode strings are likely supported, but should be verified. Path handling may differ (e.g., NextZXOS may use `/` but may require explicit device prefix `sd0:/` or similar).
+- **Possible future mitigation:** Add a platform abstraction layer for path handling (`nextglk_resolve_path()`) that normalizes paths for the target platform. The `fopen()` calls themselves are likely fine if z88dk provides a conforming stdio.
+
+### Separation of stream and file layers
+
+- **Location:** `nextglk/next_stream.c` and `nextglk/nextglk_file.c`
+- **Concern:** The Glk stream layer (`next_stream.c`) and the platform file layer (`nextglk_file.c`) are cleanly separated. The stream layer only sees `NextGlkFile*` as an opaque pointer (via a forward declaration in `nextglk.h`). The platform file layer is entirely independent and can be replaced for different platforms without touching the stream layer. This is a good architecture for portability.
+- **Linux implementation:** The separation is enforced by the header structure: `struct NextGlkFile` is defined only in `nextglk_file.c`, not in any header. All access goes through the function API (`nextglk_file_read()`, `nextglk_file_write()`, etc.).
+- **Likely Spectrum Next impact:** This architecture means the Spectrum Next port can replace `nextglk_file.c` entirely with a version that uses NextZXOS native file APIs, while keeping the stream layer unchanged. This is a significant portability win.
+- **Possible future mitigation:** None required — the architecture is already designed for this.
+
+### Implications for upcoming save/restore support
+
+- **Location:** `nextglk/nextglk.c`, `glk_stream_open_file()`
+- **Concern:** Save and restore will use `filemode_Read` and `filemode_Write` respectively through this same `glk_stream_open_file()` path. The stream layer now fully supports opening files for both reading and writing. The save implementation will need to:
+  1. Create a fileref via `glk_fileref_create_by_prompt(fileusage_SavedGame, ...)`.
+  2. Open a write-mode stream via `glk_stream_open_file(fref, filemode_Write, rock)`.
+  3. Write the Quetzal save data via `glk_put_buffer_stream()`.
+  4. Close the stream.
+  The restore implementation will follow the same pattern with `filemode_Read` and `glk_get_buffer_stream()` (still a stub). The stream layer is ready for save/restore from an architectural perspective — the only missing piece is the `glk_get_buffer_stream()` implementation for reading save data back.
+- **Linux implementation:** All modes (Write, WriteAppend, Read) are now functional in `glk_stream_open_file()`. `glk_put_buffer_stream()` works end-to-end for writing. `glk_get_buffer_stream()` remains a stub (returns 0).
+- **Likely Spectrum Next impact:** Save/restore will work on the Spectrum Next once the same path is ported. The key concern is that save files may be large (hundreds of kilobytes for large Inform 7 games), which could stress SD card write performance and heap memory. The Quetzal format is chunked, so the VM writes the save in sections — each section is a `glk_put_buffer_stream()` call, which the stream layer passes to `nextglk_file_write()` as a single `fwrite()`. Large chunks could be problematic on the Spectrum Next.
+- **Possible future mitigation:** Consider adding a chunked write loop in `nextglk_file_write()` for the Spectrum Next port (similar to the note above about large fwrite calls). Also consider memory budgeting: if the save file requires a temporary heap buffer for compression or chunking, this could consume significant memory on the Spectrum Next.
+
+### Stream rock value now fully functional
+
+- **Location:** `nextglk/nextglk_internal.h` (stream_t.rock field), `nextglk/next_stream.c` (`gli_new_stream()`, `glk_stream_get_rock()`, `glk_stream_iterate()`)
+- **Concern:** The stream rock value was previously a stub (always returned 0). It is now stored and retrievable via `glk_stream_get_rock()` and visible via `glk_stream_iterate()`. The rock value is a `glui32` (4 bytes) stored per-stream. This is a minimal memory cost (4 bytes per stream) but should be noted.
+- **Linux implementation:** Stored as `glui32 rock` in the `stream_t` struct, set by `gli_new_stream()` from the caller-supplied rock parameter.
+- **Likely Spectrum Next impact:** 4 bytes per stream is negligible (typically < 10 streams active at once when counting window streams). No significant impact.
+- **Possible future mitigation:** None required.

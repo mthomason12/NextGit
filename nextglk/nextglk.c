@@ -779,8 +779,10 @@ strid_t glk_stream_open_file(frefid_t fileref, glui32 fmode, glui32 rock)
             break;
 
         case filemode_Read:
-            /* Read mode deferred to Phase 3B */
-            return NULL;
+            readable = 1;
+            writable = 0;
+            nf = nextglk_file_open_read(fref->filename);
+            break;
 
         default:
             return NULL;
