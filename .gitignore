@@ -36,3 +36,5 @@ TestGame/*/Index/
 TestGame/*/Release/
 TestGame/*/*skein
 
+NextGlk/*.glkdata
+
