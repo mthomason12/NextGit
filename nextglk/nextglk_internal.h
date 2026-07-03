@@ -61,9 +61,38 @@ struct glk_stream_struct {
 };
 
 /* -------------------------------------------------------------------------
+ * window_t — Window object
+ *
+ * Ownership rules (from docs/glk-object-lifecycle.md):
+ *   - str:       OWNED (created by gli_new_window(), destroyed by gli_delete_window())
+ *   - echostr:   NOT OWNED (set by game, not closed on window close)
+ *   - linebuf:   NOT OWNED (points into VM memory, not freed)
+ * ------------------------------------------------------------------------- */
+
+struct glk_window_struct {
+    /* Dispatch-layer bookkeeping (MANDATORY) */
+    gidispatch_rock_t disprock;
+
+    /* Streams */
+    stream_t *str;              /* window's output stream (OWNED) */
+    stream_t *echostr;          /* echo stream, or NULL (NOT OWNED) */
+
+    /* Input state */
+    int line_request;           /* 1 if line input is pending */
+    int line_request_uni;       /* 1 if line input is Unicode */
+    int char_request;           /* 1 if char input is pending */
+    int char_request_uni;       /* 1 if char input is Unicode */
+
+    /* Line buffer (points to VM memory, NOT OWNED) */
+    void *linebuf;
+    glui32 linebuflen;
+    gidispatch_rock_t inarrayrock;  /* dispatch-layer array registration */
+};
+
+/* -------------------------------------------------------------------------
  * Global state
  *
- * Defined in next_stream.c, declared extern here.
+ * Defined in next_stream.c or next_window.c, declared extern here.
  * ------------------------------------------------------------------------- */
 
 extern stream_t *gli_streamlist;
@@ -90,5 +119,31 @@ extern void (*gli_unregister_obj)(void *obj, glui32 objclass,
 stream_t *gli_new_stream(int type, int readable, int writable, glui32 rock);
 void gli_delete_stream(stream_t *str, stream_result_t *result);
 void gli_stream_fill_result(stream_t *str, stream_result_t *result);
+
+/* -------------------------------------------------------------------------
+ * Window lifecycle functions
+ * ------------------------------------------------------------------------- */
+
+window_t *gli_new_window(glui32 rock);
+void gli_delete_window(window_t *win, stream_result_t *result);
+
+/* -------------------------------------------------------------------------
+ * Window API functions (declared in glk.h, implemented in next_window.c)
+ * ------------------------------------------------------------------------- */
+
+winid_t glk_window_open(winid_t split, glui32 method, glui32 size,
+    glui32 wintype, glui32 rock);
+void glk_window_close(winid_t win, stream_result_t *result);
+winid_t glk_window_get_root(void);
+glui32 glk_window_get_type(winid_t win);
+void glk_window_get_size(winid_t win, glui32 *widthptr, glui32 *heightptr);
+strid_t glk_window_get_stream(winid_t win);
+winid_t glk_window_get_sibling(winid_t win);
+winid_t glk_window_iterate(winid_t win, glui32 *rockptr);
+void glk_window_clear(winid_t win);
+void glk_set_window(winid_t win);
+glui32 glk_window_get_rock(winid_t win);
+winid_t glk_window_get_parent(winid_t win);
+void glk_window_move_cursor(winid_t win, glui32 xpos, glui32 ypos);
 
 #endif /* NEXTGLK_INTERNAL_H */
