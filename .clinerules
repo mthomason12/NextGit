@@ -125,16 +125,75 @@ Before implementing a subsystem:
 
 Prefer documentation before code.
 
-## Current Status
+## Current Status (July 2026)
 
-- Git VM integrated
-- Glk dispatcher imported
+### Verified Working
+
+- Git VM integrated and running
+- Glk dispatcher integrated
 - NextGlk established
-- Image subsystem stubbed
-- Investigating core Glk object types:
-  - winid_t
-  - strid_t
-  - frefid_t
+- Stream lifecycle implemented
+- Window lifecycle implemented
+- Dispatch object registration implemented
+- Text output implemented
+- Line input implemented
+- Event loop implemented (line input path)
+- Retained array lifecycle implemented
+- Real Inform 7 / Glulx games run successfully
+- Complex Inform 7 games run successfully
+- Parser functioning
+- Inventory functioning
+- NPCs functioning
+- Room navigation functioning
+- Custom actions functioning
+
+### Verified Runtime Milestones
+
+- Real .ulx file loads successfully
+- First command executes successfully
+- Complex game (LOTR Adventure) plays correctly
+- Commands such as:
+  - look
+  - inventory
+  - movement
+  - take
+  - custom verbs
+
+  are functioning
+
+### Current Runtime Gaps
+
+Save:
+- Fails
+
+Restore:
+- Fails
+
+Transcript:
+- Fails
+
+Images:
+- Placeholder output only
+- Image display not implemented
+
+Sound:
+- Not implemented
+
+### Current Development Priority
+
+Priority 1:
+- Save support
+- Transcript support
+
+Priority 2:
+- Restore support
+
+Priority 3:
+- Image display
+
+Priority 4:
+- Remaining optional Glk functionality
+
 
 ## Unicode Policy
 
@@ -180,3 +239,46 @@ If the target game is ASCII-only:
 - Non-ASCII output may be replaced with '?'.
 
 Do not implement full Unicode rendering unless a real game requirement is identified.
+
+## 8-bit Portability Notes
+
+The Linux implementation is currently the reference implementation.
+
+Feature correctness takes priority over Spectrum Next optimisation.
+
+When implementing new functionality:
+
+- Prefer correctness first.
+- Prefer compatibility second.
+- Prefer optimisation last.
+
+However:
+
+Whenever you identify potential Spectrum Next or z88dk issues:
+
+- Record them in docs/8bit-portability-notes.md.
+- Do not immediately redesign working code.
+- Do not block feature implementation.
+- Do not introduce premature optimisation.
+
+Examples to record:
+
+- Large stack allocations
+- Excessive malloc/free usage
+- Pointer-size assumptions
+- 32-bit integer assumptions
+- File seek assumptions
+- Host OS dependencies
+- POSIX-specific APIs
+- stdio behaviours that may differ on NextZXOS
+
+Each note must include:
+
+- Location
+- Description
+- Portability concern
+- Suggested future solution
+
+The portability notes document is an observation log, not a task list.
+
+Do not rewrite working functionality solely for 8-bit compatibility unless explicitly requested.
