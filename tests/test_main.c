@@ -14,6 +14,7 @@ extern int window_tests_run(void);
 extern int dispatch_tests_run(void);
 extern int stream_output_tests_run(void);
 extern int glk_output_tests_run(void);
+extern int input_tests_run(void);
 
 int tests_passed = 0;
 int tests_failed = 0;
@@ -69,6 +70,23 @@ int main(void)
         return 1;
     }
     printf("Glk output tests: %d passed, %d failed\n", tests_passed, tests_failed);
+    tests_passed = 0;
+    tests_failed = 0;
+
+    if (tests_failed > 0) {
+        printf("\n*** SOME TESTS FAILED ***\n");
+        return 1;
+    }
+
+    printf("\n=== Input System Tests (Runtime Attempt 2) ===\n");
+    result = input_tests_run();
+    if (result != 0) {
+        printf("INPUT TESTS FAILED\n");
+        return 1;
+    }
+    printf("Input tests: %d passed, %d failed\n", tests_passed, tests_failed);
+    tests_passed = 0;
+    tests_failed = 0;
 
     if (tests_failed > 0) {
         printf("\n*** SOME TESTS FAILED ***\n");

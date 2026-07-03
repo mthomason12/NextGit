@@ -49,6 +49,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include "nextglk_internal.h"
+#include "nextglk.h"
 
 /* -------------------------------------------------------------------------
  * Dispatch-layer registration callbacks
@@ -215,6 +216,9 @@ glui32 glk_gestalt(glui32 sel, glui32 val)
         case gestalt_UnicodeNorm:
             return 1;
 
+        case gestalt_LineInput:
+            return 1;
+
         case gestalt_LineInputEcho:
             return 1;
 
@@ -265,21 +269,47 @@ glui32 glk_gestalt_ext(glui32 sel, glui32 val, glui32 *arr, glui32 arrlen)
 /* -------------------------------------------------------------------------
  * glk_select — Block until an event occurs
  *
- * Phase 1 stub: immediately returns with evtype_None.
- * The event structure is safely populated with zero values.
- *
- * Parameters:
- *   event — pointer to an event_t to populate (must not be NULL)
- * ------------------------------------------------------------------------- */
+   * If a line input request is pending on the main window, reads one line
+   * from stdin via nextglk_read_line(), copies it into the game-supplied
+   * buffer, and returns an evtype_LineInput event.
+   *
+   * If no input request is pending, returns evtype_None immediately.
+   * (No other event sources — char input, mouse, timer — are implemented.)
+   *
+   * Parameters:
+   *   event — pointer to an event_t to populate (must not be NULL)
+   * ------------------------------------------------------------------------- */
 
 void glk_select(event_t *event)
 {
-    if (event) {
-        event->type = evtype_None;
-        event->win = NULL;
-        event->val1 = 0;
+    if (!event)
+        return;
+
+    /* Check if there is a pending line request on the main window */
+    if (gli_mainwin && gli_mainwin->line_request) {
+        window_t *win = gli_mainwin;
+
+        /* Read one line from stdin into the game-supplied buffer */
+        uint16_t len = nextglk_read_line(
+            (char *)win->linebuf,
+            (uint16_t)(win->linebuflen > 0 ? win->linebuflen : 0));
+
+        /* Populate the event */
+        event->type = evtype_LineInput;
+        event->win = (winid_t)win;
+        event->val1 = (glui32)len;
         event->val2 = 0;
+
+        /* Clear the pending request */
+        win->line_request = 0;
+        return;
     }
+
+    /* No pending request — return evtype_None */
+    event->type = evtype_None;
+    event->win = NULL;
+    event->val1 = 0;
+    event->val2 = 0;
 }
 
 /* -------------------------------------------------------------------------
@@ -686,29 +716,41 @@ glui32 glk_style_measure(winid_t win, glui32 styl, glui32 hint,
 /* -------------------------------------------------------------------------
  * glk_request_line_event — Request a line input event
  *
- * Phase 1 stub: no-op. Line input is implemented in Phase 2.
+ * Stores the buffer pointer and capacity in the window's linebuf/linebuflen
+ * fields and sets the line_request flag. The actual read is performed by
+ * glk_select().
+ *
+ * The initlen parameter (pre-filled buffer content) is ignored for Phase 2.
+ * The buffer is treated as initially empty.
  *
  * Parameters:
  *   win     — the window to receive input
- *   buf     — the buffer to fill
+ *   buf     — the buffer to fill (points into VM memory, NOT owned)
  *   maxlen  — the maximum number of characters
- *   initlen — the initial length of the buffer
+ *   initlen — the initial length of the buffer (ignored)
  * ------------------------------------------------------------------------- */
 
 void glk_request_line_event(winid_t win, char *buf, glui32 maxlen,
     glui32 initlen)
 {
-    (void)win;
-    (void)buf;
-    (void)maxlen;
-    (void)initlen;
-    /* no-op (stub) */
+    window_t *winptr = (window_t *)win;
+
+    if (!winptr)
+        return;
+
+    winptr->linebuf = (void *)buf;
+    winptr->linebuflen = maxlen;
+    winptr->line_request = 1;
+
+    (void)initlen;  /* Pre-filled content not supported in Phase 2 */
 }
 
 /* -------------------------------------------------------------------------
  * glk_cancel_line_event — Cancel a pending line input event
  *
- * Phase 1 stub: no-op. Line input is implemented in Phase 2.
+ * Clears the line_request flag on the specified window. If event is
+ * non-NULL, populates it with an evtype_LineInput event with val1=0,
+ * indicating the input was cancelled.
  *
  * Parameters:
  *   win   — the window to cancel input for
@@ -717,9 +759,19 @@ void glk_request_line_event(winid_t win, char *buf, glui32 maxlen,
 
 void glk_cancel_line_event(winid_t win, event_t *event)
 {
-    (void)win;
-    (void)event;
-    /* no-op (stub) */
+    window_t *winptr = (window_t *)win;
+
+    if (!winptr)
+        return;
+
+    winptr->line_request = 0;
+
+    if (event) {
+        event->type = evtype_LineInput;
+        event->win = win;
+        event->val1 = 0;
+        event->val2 = 0;
+    }
 }
 
 /* -------------------------------------------------------------------------

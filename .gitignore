@@ -25,3 +25,14 @@ dist/
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Inform build products
+*.gblorb
+*.blorb
+
+# Keep test story sources, ignore generated files
+TestGame/*/Build/
+TestGame/*/Index/
+TestGame/*/Release/
+TestGame/*/*skein
+

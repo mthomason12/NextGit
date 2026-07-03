@@ -40,13 +40,21 @@ test_dispatch: libnextglk.a
 		-L. -lnextglk -lm
 	./test_dispatch
 
+test_input: libnextglk.a
+	$(CC) $(CFLAGS) -I. -o test_input ../tests/test_main.c \
+		../tests/stream_tests.c ../tests/window_tests.c \
+		../tests/dispatch_tests.c ../tests/stream_output_tests.c \
+		../tests/glk_output_tests.c ../tests/input_tests.c \
+		-L. -lnextglk -lm
+	./test_input
+
 test_all: libnextglk.a
 	$(CC) $(CFLAGS) -I. -o test_all ../tests/test_main.c \
 		../tests/stream_tests.c ../tests/window_tests.c \
 		../tests/dispatch_tests.c ../tests/stream_output_tests.c \
-		../tests/glk_output_tests.c \
+		../tests/glk_output_tests.c ../tests/input_tests.c \
 		-L. -lnextglk -lm
 	./test_all
 
 clean:
-	rm -f *.o *.a test_stream test_window test_dispatch test_all
+	rm -f *.o *.a test_stream test_window test_dispatch test_input test_all

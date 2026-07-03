@@ -4,30 +4,18 @@
  * See docs/integration-attempt-1.md §3a for the required symbols.
  *
  * This is a minimal implementation:
- *   - glkunix_startup_code() initialises NextGlk and returns success.
- *   - glkunix_stream_open_pathname*() return NULL stubs.
- *   - glkunix_set_base_file() is a stub.
+ *   - glkunix_startup_code() and glkunix_arguments[] are provided by
+ *     git_unix.c (the Git VM's startup routine). This file only provides
+ *     stubs for glkunix_stream_open_pathname*() and
+ *     glkunix_set_base_file().
+ *
+ * With -DUSE_MMAP, these stubs are never called (the MMAP path opens
+ * the game file directly via open()/mmap()), so glkstart.o will not
+ * be pulled from the archive at link time.
  */
 
 #include "glk.h"
 #include "glkstart.h"
-#include "nextglk.h"
-
-/* No command-line arguments defined. */
-glkunix_argumentlist_t glkunix_arguments[] = {
-    { NULL, glkunix_arg_End, NULL }
-};
-
-int glkunix_startup_code(glkunix_startup_t *data)
-{
-    (void)data;
-
-    /* Initialise NextGlk library. */
-    if (!nextglk_init())
-        return FALSE;
-
-    return TRUE;
-}
 
 void glkunix_set_base_file(char *filename)
 {
