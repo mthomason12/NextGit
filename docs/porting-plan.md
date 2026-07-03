@@ -10,25 +10,28 @@ Status: Complete
 
 ## Phase 2 - Glk Replacement
 
-Replace CheapGlk subsystems incrementally:
+Replace CheapGlk console I/O subsystems incrementally:
 
 1. Output
 2. Input
-3. File I/O
-4. Images
 
-## Phase 3 - Spectrum Next
+## Phase 3 - Glk File I/O Replacement
+
+- File Output + Game Save
+- File Input + Game Load
+
+## Phase 4 - Spectrum Next
 
 - z88dk build
 - Next screen output
 - Next keyboard input
 
-## Phase 4 - Images
+## Phase 5 - Images
 
 - Blorb loading
 - Layer 2 display
 
-## Phase 5 - Banking
+## Phase 6 - Banking
 
 - VM memory manager
 - Story paging
