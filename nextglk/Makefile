@@ -8,10 +8,15 @@ OBJS = \
 	nextglk_input.o \
 	nextglk_file.o \
 	nextglk_image.o \
+	nextglk_fileref.o \
 	nextglk_platform.o \
+	nextglk_stubs.o \
 	next_stream.o \
 	next_window.o \
-	gi_dispa.o
+	gi_dispa.o \
+	gi_blorb.o \
+	glkstart.o \
+	main.o
 
 all: libnextglk.a
 

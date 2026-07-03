@@ -75,4 +75,56 @@ glui32 glk_image_draw_scaled_ext(winid_t win, glui32 image,
 }
 #endif /* GLK_MODULE_IMAGE2 */
 
+/* -------------------------------------------------------------------------
+ * glk_window_flow_break — Insert a flow break in a text buffer window
+ * ------------------------------------------------------------------------- */
+void glk_window_flow_break(winid_t win)
+{
+    (void)win;
+
+    /* Stub — no-op. */
+}
+
+/* -------------------------------------------------------------------------
+ * glk_window_erase_rect — Erase a rectangular area of a window
+ * ------------------------------------------------------------------------- */
+void glk_window_erase_rect(winid_t win,
+    glsi32 left, glsi32 top, glui32 width, glui32 height)
+{
+    (void)win;
+    (void)left;
+    (void)top;
+    (void)width;
+    (void)height;
+
+    /* Stub — no-op. */
+}
+
+/* -------------------------------------------------------------------------
+ * glk_window_fill_rect — Fill a rectangular area with a colour
+ * ------------------------------------------------------------------------- */
+void glk_window_fill_rect(winid_t win, glui32 color,
+    glsi32 left, glsi32 top, glui32 width, glui32 height)
+{
+    (void)win;
+    (void)color;
+    (void)left;
+    (void)top;
+    (void)width;
+    (void)height;
+
+    /* Stub — no-op. */
+}
+
+/* -------------------------------------------------------------------------
+ * glk_window_set_background_color — Set the background colour of a window
+ * ------------------------------------------------------------------------- */
+void glk_window_set_background_color(winid_t win, glui32 color)
+{
+    (void)win;
+    (void)color;
+
+    /* Stub — no-op. */
+}
+
 #endif /* GLK_MODULE_IMAGE */
