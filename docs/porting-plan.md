@@ -37,7 +37,7 @@ Replace CheapGlk console I/O subsystems incrementally:
 - Story paging
 - Image cache
 
-## Phase 6 - Optimisation
+## Phase 7 - Optimisation
 
 - Profiling
 - Optional Pi acceleration
