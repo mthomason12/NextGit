@@ -4,3 +4,6 @@
 [submodule "thirdparty/glulxe-reference"]
 	path = thirdparty/glulxe-reference
 	url = https://github.com/erkyrath/glulxe.git
+[submodule "thirdparty/cheapgl"]
+	path = thirdparty/cheapgl
+	url = https://github.com/erkyrath/cheapglk.git
