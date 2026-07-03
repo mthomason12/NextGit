@@ -1,6 +1,6 @@
-/* fileio_tests.c — Fileref lifecycle tests for Milestone 3A.1
+/* fileio_tests.c — Fileref lifecycle and creation tests for Phase 3A
  *
- * Tests:
+ * Phase 3A.1 tests:
  *   - fileref allocation via gli_new_fileref()
  *   - fileref destruction via gli_delete_fileref()
  *   - list insertion (head insertion)
@@ -11,14 +11,23 @@
  *   - dispatch unregistration callback on fileref destruction
  *   - glk_fileref_destroy() public API
  *
- * These tests use gli_new_fileref() directly rather than the
- * glk_fileref_create_* functions because the create functions are
- * still stubs in Phase 3A.1.
+ * Phase 3A.2 tests:
+ *   - glk_fileref_create_by_name() suffix handling
+ *   - glk_fileref_create_by_name() no double-extension
+ *   - glk_fileref_create_by_name() with NULL name
+ *   - glk_fileref_create_by_prompt() fixed filenames
+ *   - glk_fileref_create_temp() creates unique file
+ *   - glk_fileref_create_from_fileref() clones filename
+ *   - glk_fileref_create_from_fileref() changes usage
+ *   - glk_fileref_create_from_fileref() with NULL
+ *   - Iteration after creation (all types)
+ *   - glk_fileref_destroy() after creation
  */
 
 #include "../nextglk/nextglk_internal.h"
 #include "test_common.h"
 #include <string.h>
+#include <unistd.h>
 
 /* -------------------------------------------------------------------------
  * Mock callback state
@@ -73,6 +82,10 @@ static void mock_unregister_obj(void *obj, glui32 objclass,
 
 int fileio_tests_run(void)
 {
+    /* =====================================================================
+     * Phase 3A.1 — Fileref Lifecycle Tests
+     * ===================================================================== */
+
     /* ---- Fileref allocation via gli_new_fileref ---- */
 
     {
@@ -465,6 +478,382 @@ int fileio_tests_run(void)
 
         /* Restore callbacks */
         gidispatch_set_object_registry(saved_regi, saved_unregi);
+    }
+
+    /* =====================================================================
+     * Phase 3A.2 — Fileref Creation Tests
+     * ===================================================================== */
+
+    /* ---- glk_fileref_create_by_name: appends .glkdata suffix ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_by_name(
+            fileusage_Data, "mydata", 0);
+        TEST_ASSERT(f != NULL,
+            "glk_fileref_create_by_name(fileusage_Data, \"mydata\") succeeds");
+        TEST_ASSERT(strstr(f->filename, "mydata.glkdata") != NULL,
+            "filename contains \"mydata.glkdata\"");
+        TEST_ASSERT(strcmp(f->filename, "mydata.glkdata") == 0,
+            "filename is exactly \"mydata.glkdata\"");
+        TEST_ASSERT(f->usage == fileusage_Data,
+            "usage is fileusage_Data");
+        glk_fileref_destroy(f);
+    }
+
+    /* ---- glk_fileref_create_by_name: appends .glksave suffix ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_by_name(
+            fileusage_SavedGame, "savegame", 0);
+        TEST_ASSERT(f != NULL,
+            "glk_fileref_create_by_name(fileusage_SavedGame) succeeds");
+        TEST_ASSERT(strstr(f->filename, "savegame.glksave") != NULL,
+            "filename contains \"savegame.glksave\"");
+        TEST_ASSERT(strcmp(f->filename, "savegame.glksave") == 0,
+            "filename is exactly \"savegame.glksave\"");
+        glk_fileref_destroy(f);
+    }
+
+    /* ---- glk_fileref_create_by_name: appends .txt suffix ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_by_name(
+            fileusage_Transcript, "script", 0);
+        TEST_ASSERT(f != NULL,
+            "glk_fileref_create_by_name(fileusage_Transcript) succeeds");
+        TEST_ASSERT(strstr(f->filename, "script.txt") != NULL,
+            "filename contains \"script.txt\"");
+        TEST_ASSERT(strcmp(f->filename, "script.txt") == 0,
+            "filename is exactly \"script.txt\"");
+        glk_fileref_destroy(f);
+    }
+
+    /* ---- glk_fileref_create_by_name: appends .glkrec suffix ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_by_name(
+            fileusage_InputRecord, "replay", 0);
+        TEST_ASSERT(f != NULL,
+            "glk_fileref_create_by_name(fileusage_InputRecord) succeeds");
+        TEST_ASSERT(strstr(f->filename, "replay.glkrec") != NULL,
+            "filename contains \"replay.glkrec\"");
+        TEST_ASSERT(strcmp(f->filename, "replay.glkrec") == 0,
+            "filename is exactly \"replay.glkrec\"");
+        glk_fileref_destroy(f);
+    }
+
+    /* ---- glk_fileref_create_by_name: no double-extension (.glkdata) ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_by_name(
+            fileusage_Data, "config.glkdata", 0);
+        TEST_ASSERT(f != NULL,
+            "glk_fileref_create_by_name() with .glkdata extension succeeds");
+        TEST_ASSERT(strstr(f->filename, "config.glkdata") != NULL,
+            "filename contains \"config.glkdata\"");
+        TEST_ASSERT(strstr(f->filename, ".glkdata.glkdata") == NULL,
+            "filename does NOT have double .glkdata suffix");
+        TEST_ASSERT(strcmp(f->filename, "config.glkdata") == 0,
+            "filename is exactly \"config.glkdata\" (no double-append)");
+        glk_fileref_destroy(f);
+    }
+
+    /* ---- glk_fileref_create_by_name: no double-extension (.glksave) ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_by_name(
+            fileusage_SavedGame, "mysave.glksave", 0);
+        TEST_ASSERT(f != NULL,
+            "glk_fileref_create_by_name() with .glksave extension succeeds");
+        TEST_ASSERT(strstr(f->filename, ".glksave.glksave") == NULL,
+            "filename does NOT have double .glksave suffix");
+        TEST_ASSERT(strcmp(f->filename, "mysave.glksave") == 0,
+            "filename is exactly \"mysave.glksave\" (no double-append)");
+        glk_fileref_destroy(f);
+    }
+
+    /* ---- glk_fileref_create_by_name: no double-extension (.txt) ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_by_name(
+            fileusage_Transcript, "log.txt", 0);
+        TEST_ASSERT(f != NULL,
+            "glk_fileref_create_by_name() with .txt extension succeeds");
+        TEST_ASSERT(strstr(f->filename, ".txt.txt") == NULL,
+            "filename does NOT have double .txt suffix");
+        TEST_ASSERT(strcmp(f->filename, "log.txt") == 0,
+            "filename is exactly \"log.txt\" (no double-append)");
+        glk_fileref_destroy(f);
+    }
+
+    /* ---- glk_fileref_create_by_name: no double-extension (.glkrec) ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_by_name(
+            fileusage_InputRecord, "input.glkrec", 0);
+        TEST_ASSERT(f != NULL,
+            "glk_fileref_create_by_name() with .glkrec extension succeeds");
+        TEST_ASSERT(strstr(f->filename, ".glkrec.glkrec") == NULL,
+            "filename does NOT have double .glkrec suffix");
+        TEST_ASSERT(strcmp(f->filename, "input.glkrec") == 0,
+            "filename is exactly \"input.glkrec\" (no double-append)");
+        glk_fileref_destroy(f);
+    }
+
+    /* ---- glk_fileref_create_by_name: rock value stored ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_by_name(
+            fileusage_Data, "rocktest", 42);
+        TEST_ASSERT(f != NULL,
+            "glk_fileref_create_by_name() with rock succeeds");
+        TEST_ASSERT(glk_fileref_get_rock(f) == 42,
+            "glk_fileref_get_rock returns 42");
+        TEST_ASSERT(f->rock == 42,
+            "fileref rock field is 42");
+        glk_fileref_destroy(f);
+    }
+
+    /* ---- glk_fileref_create_by_name: NULL name returns NULL ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_by_name(
+            fileusage_Data, NULL, 0);
+        TEST_ASSERT(f == NULL,
+            "glk_fileref_create_by_name(NULL) returns NULL");
+    }
+
+    /* ---- glk_fileref_create_by_prompt: fixed filename for SavedGame ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_by_prompt(
+            fileusage_SavedGame, 0x01, 0);
+        TEST_ASSERT(f != NULL,
+            "glk_fileref_create_by_prompt(fileusage_SavedGame) succeeds");
+        TEST_ASSERT(strcmp(f->filename, "nextgit.sav") == 0,
+            "filename is exactly \"nextgit.sav\"");
+        TEST_ASSERT(f->usage == fileusage_SavedGame,
+            "usage is fileusage_SavedGame");
+        glk_fileref_destroy(f);
+    }
+
+    /* ---- glk_fileref_create_by_prompt: fixed filename for Transcript ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_by_prompt(
+            fileusage_Transcript, 0x01, 0);
+        TEST_ASSERT(f != NULL,
+            "glk_fileref_create_by_prompt(fileusage_Transcript) succeeds");
+        TEST_ASSERT(strcmp(f->filename, "transcript.txt") == 0,
+            "filename is exactly \"transcript.txt\"");
+        TEST_ASSERT(f->usage == fileusage_Transcript,
+            "usage is fileusage_Transcript");
+        glk_fileref_destroy(f);
+    }
+
+    /* ---- glk_fileref_create_by_prompt: fixed filename for InputRecord ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_by_prompt(
+            fileusage_InputRecord, 0x01, 0);
+        TEST_ASSERT(f != NULL,
+            "glk_fileref_create_by_prompt(fileusage_InputRecord) succeeds");
+        TEST_ASSERT(strcmp(f->filename, "input.rec") == 0,
+            "filename is exactly \"input.rec\"");
+        TEST_ASSERT(f->usage == fileusage_InputRecord,
+            "usage is fileusage_InputRecord");
+        glk_fileref_destroy(f);
+    }
+
+    /* ---- glk_fileref_create_by_prompt: fixed filename for Data ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_by_prompt(
+            fileusage_Data, 0x01, 0);
+        TEST_ASSERT(f != NULL,
+            "glk_fileref_create_by_prompt(fileusage_Data) succeeds");
+        TEST_ASSERT(strcmp(f->filename, "data.glkdata") == 0,
+            "filename is exactly \"data.glkdata\"");
+        TEST_ASSERT(f->usage == fileusage_Data,
+            "usage is fileusage_Data");
+        glk_fileref_destroy(f);
+    }
+
+    /* ---- glk_fileref_create_by_prompt: rock value stored ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_by_prompt(
+            fileusage_SavedGame, 0x01, 99);
+        TEST_ASSERT(f != NULL,
+            "glk_fileref_create_by_prompt() with rock succeeds");
+        TEST_ASSERT(glk_fileref_get_rock(f) == 99,
+            "glk_fileref_get_rock returns 99");
+        glk_fileref_destroy(f);
+    }
+
+    /* ---- glk_fileref_create_temp: creates unique temp file ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_temp(
+            fileusage_Data, 0);
+        TEST_ASSERT(f != NULL,
+            "glk_fileref_create_temp() succeeds");
+        TEST_ASSERT(f->filename != NULL,
+            "temp fileref has a filename");
+        TEST_ASSERT(strncmp(f->filename, "nextgit-", 8) == 0,
+            "temp filename starts with \"nextgit-\"");
+        TEST_ASSERT(f->usage == fileusage_Data,
+            "temp fileref has correct usage");
+
+        /* Clean up: delete the temp file and destroy the fileref.
+         * We use unlink() directly since glk_fileref_delete_file is
+         * still a stub in Phase 3A.2. */
+        if (f->filename)
+            unlink(f->filename);
+
+        glk_fileref_destroy(f);
+    }
+
+    /* ---- glk_fileref_create_temp: two calls produce different names ---- */
+
+    {
+        fileref_t *f1 = glk_fileref_create_temp(
+            fileusage_Data, 0);
+        fileref_t *f2 = glk_fileref_create_temp(
+            fileusage_Data, 0);
+        TEST_ASSERT(f1 != NULL,
+            "glk_fileref_create_temp() first call succeeds");
+        TEST_ASSERT(f2 != NULL,
+            "glk_fileref_create_temp() second call succeeds");
+        TEST_ASSERT(strcmp(f1->filename, f2->filename) != 0,
+            "two temp filerefs have different filenames");
+
+        /* Clean up */
+        if (f1->filename)
+            unlink(f1->filename);
+        if (f2->filename)
+            unlink(f2->filename);
+
+        glk_fileref_destroy(f1);
+        glk_fileref_destroy(f2);
+    }
+
+    /* ---- glk_fileref_create_temp: rock value stored ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_temp(
+            fileusage_SavedGame, 55);
+        TEST_ASSERT(f != NULL,
+            "glk_fileref_create_temp() with rock succeeds");
+        TEST_ASSERT(glk_fileref_get_rock(f) == 55,
+            "glk_fileref_get_rock returns 55");
+
+        if (f->filename)
+            unlink(f->filename);
+
+        glk_fileref_destroy(f);
+    }
+
+    /* ---- glk_fileref_create_from_fileref: clones filename ---- */
+
+    {
+        fileref_t *orig = glk_fileref_create_by_name(
+            fileusage_Data, "source", 0);
+        TEST_ASSERT(orig != NULL,
+            "Created original fileref for create_from_fileref test");
+
+        fileref_t *clone = glk_fileref_create_from_fileref(
+            fileusage_Transcript, orig, 0);
+        TEST_ASSERT(clone != NULL,
+            "glk_fileref_create_from_fileref() succeeds");
+        TEST_ASSERT(clone != orig,
+            "clone is a different pointer from original");
+        TEST_ASSERT(strcmp(clone->filename, orig->filename) == 0,
+            "clone has same filename as original");
+        TEST_ASSERT(strcmp(clone->filename, "source.glkdata") == 0,
+            "clone filename is \"source.glkdata\"");
+        TEST_ASSERT(clone->usage == fileusage_Transcript,
+            "clone usage is fileusage_Transcript (not Data)");
+
+        glk_fileref_destroy(clone);
+        glk_fileref_destroy(orig);
+    }
+
+    /* ---- glk_fileref_create_from_fileref: different usage and rock ---- */
+
+    {
+        fileref_t *orig = glk_fileref_create_by_name(
+            fileusage_SavedGame, "game", 10);
+        TEST_ASSERT(orig != NULL,
+            "Created original fileref for create_from_fileref usage test");
+
+        fileref_t *clone = glk_fileref_create_from_fileref(
+            fileusage_Data, orig, 20);
+        TEST_ASSERT(clone != NULL,
+            "glk_fileref_create_from_fileref() with different usage succeeds");
+        TEST_ASSERT(clone->usage == fileusage_Data,
+            "clone usage is fileusage_Data");
+        TEST_ASSERT(glk_fileref_get_rock(clone) == 20,
+            "clone rock is 20");
+
+        /* Original should be unchanged */
+        TEST_ASSERT(orig->usage == fileusage_SavedGame,
+            "original usage is still fileusage_SavedGame");
+        TEST_ASSERT(glk_fileref_get_rock(orig) == 10,
+            "original rock is still 10");
+
+        glk_fileref_destroy(clone);
+        glk_fileref_destroy(orig);
+    }
+
+    /* ---- glk_fileref_create_from_fileref: NULL fref returns NULL ---- */
+
+    {
+        fileref_t *f = glk_fileref_create_from_fileref(
+            fileusage_Data, NULL, 0);
+        TEST_ASSERT(f == NULL,
+            "glk_fileref_create_from_fileref(NULL) returns NULL");
+    }
+
+    /* ---- Iteration: all creation types appear in list ---- */
+
+    {
+        fileref_t *f_by_name = glk_fileref_create_by_name(
+            fileusage_Data, "iter1", 0);
+        fileref_t *f_by_prompt = glk_fileref_create_by_prompt(
+            fileusage_SavedGame, 0x01, 0);
+        fileref_t *f_temp = glk_fileref_create_temp(
+            fileusage_Transcript, 0);
+
+        TEST_ASSERT(f_by_name != NULL,
+            "create_by_name for iteration test succeeds");
+        TEST_ASSERT(f_by_prompt != NULL,
+            "create_by_prompt for iteration test succeeds");
+        TEST_ASSERT(f_temp != NULL,
+            "create_temp for iteration test succeeds");
+
+        /* Iterate through all filerefs and count them */
+        int count = 0;
+        fileref_t *iter = glk_fileref_iterate(NULL, NULL);
+        while (iter != NULL) {
+            count++;
+            iter = glk_fileref_iterate(iter, NULL);
+        }
+        TEST_ASSERT(count >= 3,
+            "iteration sees at least 3 filerefs after all creation types");
+
+        /* Clean up temp files */
+        if (f_temp->filename)
+            unlink(f_temp->filename);
+
+        glk_fileref_destroy(f_temp);
+        glk_fileref_destroy(f_by_prompt);
+        glk_fileref_destroy(f_by_name);
+
+        /* Verify list is empty after destroying all */
+        iter = glk_fileref_iterate(NULL, NULL);
+        TEST_ASSERT(iter == NULL,
+            "iteration returns NULL after all filerefs destroyed");
     }
 
     return 0;
