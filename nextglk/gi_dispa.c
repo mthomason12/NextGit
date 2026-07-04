@@ -729,12 +729,17 @@ void gidispatch_call(glui32 funcnum, glui32 numargs, gluniversal_t *arglist)
             break;
         case 0x0022: /* window_get_root */
             arglist[1].opaqueref = glk_window_get_root();
-            fprintf(stderr, "TRACE gi_dispa window_get_root -> %p\n",
-                arglist[1].opaqueref);
+            fprintf(stderr, "BENCH_TRACE: glk_window_get_root() -> %p\n",
+                (void*)arglist[1].opaqueref);
             break;
         case 0x0023: /* window_open */
+            fprintf(stderr, "BENCH_TRACE: glk_window_open(split=%p, method=%u, size=%u, wintype=%u, rock=%u)\n",
+                (void*)arglist[0].opaqueref, arglist[1].uint, arglist[2].uint,
+                arglist[3].uint, arglist[4].uint);
             arglist[6].opaqueref = glk_window_open(arglist[0].opaqueref, arglist[1].uint, 
                 arglist[2].uint, arglist[3].uint, arglist[4].uint);
+            fprintf(stderr, "BENCH_TRACE: glk_window_open -> %p\n",
+                (void*)arglist[6].opaqueref);
             break;
         case 0x0024: /* window_close */
             if (arglist[1].ptrflag) {
@@ -829,6 +834,8 @@ void gidispatch_call(glui32 funcnum, glui32 numargs, gluniversal_t *arglist)
             arglist[2].opaqueref = glk_window_get_echo_stream(arglist[0].opaqueref);
             break;
         case 0x002F: /* set_window */
+            fprintf(stderr, "BENCH_TRACE: glk_set_window(win=%p)\n",
+                (void*)arglist[0].opaqueref);
             glk_set_window(arglist[0].opaqueref);
             break;
         case 0x0030: /* window_get_sibling */
@@ -888,8 +895,12 @@ void gidispatch_call(glui32 funcnum, glui32 numargs, gluniversal_t *arglist)
                 arglist[1].charstr, arglist[2].uint);
             break;
         case 0x0062: /* fileref_create_by_prompt */
+            fprintf(stderr, "BENCH_TRACE: glk_fileref_create_by_prompt(usage=%u, fmode=%u, rock=%u)\n",
+                arglist[0].uint, arglist[1].uint, arglist[2].uint);
             arglist[4].opaqueref = glk_fileref_create_by_prompt(arglist[0].uint, 
                 arglist[1].uint, arglist[2].uint);
+            fprintf(stderr, "BENCH_TRACE: glk_fileref_create_by_prompt -> %p\n",
+                (void*)arglist[4].opaqueref);
             break;
         case 0x0063: /* fileref_destroy */
             glk_fileref_destroy(arglist[0].opaqueref);
@@ -991,6 +1002,7 @@ void gidispatch_call(glui32 funcnum, glui32 numargs, gluniversal_t *arglist)
                     arglist[2].uint, NULL);
             break;
         case 0x00C0: /* select */
+            fprintf(stderr, "BENCH_TRACE: glk_select() called\n");
             if (arglist[0].ptrflag) {
                 event_t dat;
                 glk_select(&dat);
@@ -998,9 +1010,12 @@ void gidispatch_call(glui32 funcnum, glui32 numargs, gluniversal_t *arglist)
                 arglist[2].opaqueref = dat.win;
                 arglist[3].uint = dat.val1;
                 arglist[4].uint = dat.val2;
+                fprintf(stderr, "BENCH_TRACE: glk_select -> event.type=%u win=%p val1=%u val2=%u\n",
+                    dat.type, (void*)dat.win, dat.val1, dat.val2);
             }
             else {
                 glk_select(NULL);
+                fprintf(stderr, "BENCH_TRACE: glk_select(NULL) returned\n");
             }
             break;
         case 0x00C1: /* select_poll */
@@ -1011,20 +1026,22 @@ void gidispatch_call(glui32 funcnum, glui32 numargs, gluniversal_t *arglist)
                 arglist[2].opaqueref = dat.win;
                 arglist[3].uint = dat.val1;
                 arglist[4].uint = dat.val2;
+                fprintf(stderr, "BENCH_TRACE: glk_select_poll -> event.type=%u win=%p val1=%u val2=%u\n",
+                    dat.type, (void*)dat.win, dat.val1, dat.val2);
             }
             else {
                 glk_select_poll(NULL);
             }
             break;
         case 0x00D0: /* request_line_event */
-            fprintf(stderr, "TRACE gi_dispa request_line_event win=%p\n",
-                arglist[0].opaqueref);
+            fprintf(stderr, "BENCH_TRACE: glk_request_line_event(win=%p, maxlen=%u)\n",
+                (void*)arglist[0].opaqueref, arglist[3].uint);
             if (arglist[1].ptrflag)
                 glk_request_line_event(arglist[0].opaqueref, arglist[2].array,
-                    arglist[3].uint, 0);
+                    arglist[3].uint, arglist[4].uint);
             else
                 glk_request_line_event(arglist[0].opaqueref, NULL,
-                    0, 0);
+                    0, arglist[2].uint);
             break;
         case 0x00D1: /* cancel_line_event */
             if (arglist[1].ptrflag) {
@@ -1274,12 +1291,14 @@ void gidispatch_call(glui32 funcnum, glui32 numargs, gluniversal_t *arglist)
             glk_request_char_event_uni(arglist[0].opaqueref);
             break;
         case 0x0141: /* request_line_event_uni */
+            fprintf(stderr, "BENCH_TRACE: glk_request_line_event_uni(win=%p, maxlen=%u)\n",
+                (void*)arglist[0].opaqueref, arglist[3].uint);
             if (arglist[1].ptrflag)
                 glk_request_line_event_uni(arglist[0].opaqueref, arglist[2].array,
-                    arglist[3].uint, 0);
+                    arglist[3].uint, arglist[4].uint);
             else
                 glk_request_line_event_uni(arglist[0].opaqueref, NULL,
-                    0, 0);
+                    0, arglist[2].uint);
             break;
 #endif /* GLK_MODULE_UNICODE */
 

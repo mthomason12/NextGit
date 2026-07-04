@@ -13,6 +13,7 @@
  * Image support is NOT implemented.
  */
 
+#include <stdio.h>
 #include "nextglk_internal.h"
 #include "nextglk.h"
 
@@ -199,6 +200,8 @@ void glk_window_close(winid_t win, stream_result_t *result)
 
 winid_t glk_window_get_root(void)
 {
+    fprintf(stderr, "DEBUG glk_window_get_root: returning %p (gli_mainwin=%p)\n",
+        (void*)gli_mainwin, (void*)gli_mainwin);
     return gli_mainwin;
 }
 

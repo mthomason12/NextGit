@@ -222,6 +222,9 @@ void glk_request_line_event_uni(winid_t win, glui32 *buf, glui32 maxlen,
         (void*)win, (void*)buf, maxlen, initlen);
 
     if (!winptr)
+        winptr = gli_mainwin;
+
+    if (!winptr)
         return;
 
     winptr->linebuf = (void *)buf;

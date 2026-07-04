@@ -295,6 +295,12 @@ void glk_select(event_t *event)
 
         fprintf(stderr, "DEBUG glk_select: read %u chars\n", (unsigned)len);
 
+        /* If EOF on stdin, exit like CheapGlk does. */
+        if (len == 0) {
+            glk_exit();
+            return;
+        }
+
         /* Populate the event */
         event->type = evtype_LineInput;
         event->win = (winid_t)win;
@@ -1066,6 +1072,9 @@ void glk_request_line_event(winid_t win, char *buf, glui32 maxlen,
 
     fprintf(stderr, "DEBUG req_line_event(8-bit): win=%p buf=%p maxlen=%u initlen=%u\n",
         (void*)win, (void*)buf, maxlen, initlen);
+
+    if (!winptr)
+        winptr = gli_mainwin;
 
     if (!winptr)
         return;
