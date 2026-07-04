@@ -39,6 +39,6 @@ TestGame/*/Release/
 TestGame/*/*skein
 
 NextGlk/*.glkdata
-nextgit.sav
+/nextgit.sav
 *.log
 
