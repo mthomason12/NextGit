@@ -31,6 +31,8 @@ try {
         GLKINCLUDEDIR=../../nextglk `
         GLKLIBDIR=../../nextglk `
         OPTIONS="-DUSE_MMAP"
+
+    mv git gitn
 }
 finally {
     Pop-Location

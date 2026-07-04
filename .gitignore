@@ -4,6 +4,8 @@
 *.so
 *.dll
 *.exe
+gitc
+gitn
 
 # z88dk
 *.map
