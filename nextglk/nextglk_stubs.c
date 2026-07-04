@@ -20,9 +20,11 @@
  */
 
 #include <stddef.h>
+#include <stdio.h>
 #include "glk.h"
 #include "gi_dispa.h"
 #include "gi_blorb.h"
+#include "nextglk_internal.h"
 
 #ifndef TRUE
 #define TRUE 1
@@ -214,12 +216,28 @@ void glk_request_char_event_uni(winid_t win)
 void glk_request_line_event_uni(winid_t win, glui32 *buf, glui32 maxlen,
     glui32 initlen)
 {
-    (void)win;
-    (void)buf;
-    (void)maxlen;
-    (void)initlen;
+    window_t *winptr = (window_t *)win;
 
-    /* Stub — no-op. */
+    fprintf(stderr, "DEBUG req_line_event(UNI): win=%p buf=%p maxlen=%u initlen=%u\n",
+        (void*)win, (void*)buf, maxlen, initlen);
+
+    if (!winptr)
+        return;
+
+    winptr->linebuf = (void *)buf;
+    winptr->linebuflen = maxlen * sizeof(glui32);
+    winptr->line_request_uni = 1;
+
+    (void)initlen;  /* Pre-filled content not supported */
+
+    /* Register the array with the dispatch layer so it persists
+     * across glk_select() and gets written back to VM memory. */
+    if (gli_register_arr) {
+        winptr->inarrayrock = (*gli_register_arr)(buf, maxlen, "&+#!Iu");
+    }
+
+    fprintf(stderr, "DEBUG req_line_event(UNI): done, line_request_uni=%d\n",
+        winptr->line_request_uni);
 }
 
 #endif /* GLK_MODULE_UNICODE */

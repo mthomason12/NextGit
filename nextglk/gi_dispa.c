@@ -9,6 +9,7 @@
 /* This code should be linked into every Glk library, without change. 
     Get the latest version from the URL above. */
 
+#include <stdio.h>
 #include "glk.h"
 #include "gi_dispa.h"
 
@@ -728,6 +729,8 @@ void gidispatch_call(glui32 funcnum, glui32 numargs, gluniversal_t *arglist)
             break;
         case 0x0022: /* window_get_root */
             arglist[1].opaqueref = glk_window_get_root();
+            fprintf(stderr, "TRACE gi_dispa window_get_root -> %p\n",
+                arglist[1].opaqueref);
             break;
         case 0x0023: /* window_open */
             arglist[6].opaqueref = glk_window_open(arglist[0].opaqueref, arglist[1].uint, 
@@ -1014,12 +1017,14 @@ void gidispatch_call(glui32 funcnum, glui32 numargs, gluniversal_t *arglist)
             }
             break;
         case 0x00D0: /* request_line_event */
+            fprintf(stderr, "TRACE gi_dispa request_line_event win=%p\n",
+                arglist[0].opaqueref);
             if (arglist[1].ptrflag)
                 glk_request_line_event(arglist[0].opaqueref, arglist[2].array,
-                    arglist[3].uint, arglist[4].uint);
+                    arglist[3].uint, 0);
             else
                 glk_request_line_event(arglist[0].opaqueref, NULL,
-                    0, arglist[2].uint);
+                    0, 0);
             break;
         case 0x00D1: /* cancel_line_event */
             if (arglist[1].ptrflag) {
@@ -1271,10 +1276,10 @@ void gidispatch_call(glui32 funcnum, glui32 numargs, gluniversal_t *arglist)
         case 0x0141: /* request_line_event_uni */
             if (arglist[1].ptrflag)
                 glk_request_line_event_uni(arglist[0].opaqueref, arglist[2].array,
-                    arglist[3].uint, arglist[4].uint);
+                    arglist[3].uint, 0);
             else
                 glk_request_line_event_uni(arglist[0].opaqueref, NULL,
-                    0, arglist[2].uint);
+                    0, 0);
             break;
 #endif /* GLK_MODULE_UNICODE */
 

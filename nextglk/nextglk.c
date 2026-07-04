@@ -109,40 +109,21 @@ void gidispatch_set_object_registry(
 
 gidispatch_rock_t gidispatch_get_objrock(void *obj, glui32 objclass)
 {
-    gidispatch_rock_t rock;
-    rock.num = 0;
-
+    /* Match CheapGlk: disprock is the first field in every Glk struct,
+       so a direct cast returns it. */
     switch (objclass) {
-        case gidisp_Class_Stream: {
-            stream_t *str = gli_streamlist;
-            while (str) {
-                if (str == obj)
-                    return str->disprock;
-                str = str->next;
-            }
-            break;
+        case gidisp_Class_Window:
+            return ((window_t *)obj)->disprock;
+        case gidisp_Class_Stream:
+            return ((stream_t *)obj)->disprock;
+        case gidisp_Class_Fileref:
+            return ((fileref_t *)obj)->disprock;
+        default: {
+            gidispatch_rock_t dummy;
+            dummy.num = 0;
+            return dummy;
         }
-        case gidisp_Class_Window: {
-            if (gli_mainwin && gli_mainwin == obj)
-                return gli_mainwin->disprock;
-            break;
-        }
-        case gidisp_Class_Fileref: {
-            fileref_t *fref = gli_filereflist;
-            while (fref) {
-                if (fref == obj)
-                    return fref->disprock;
-                fref = fref->next;
-            }
-            break;
-        }
-        case gidisp_Class_Schannel:
-        default:
-            /* Not yet implemented — return zeroed rock */
-            break;
     }
-
-    return rock;
 }
 
 /* -------------------------------------------------------------------------
@@ -294,14 +275,25 @@ void glk_select(event_t *event)
     if (!event)
         return;
 
-    /* Check if there is a pending line request on the main window */
+    /* Diagnostic: log input state */
+    fprintf(stderr, "DEBUG glk_select: line_req=%d line_req_uni=%d mainwin=%p\n",
+        gli_mainwin ? gli_mainwin->line_request : -1,
+        gli_mainwin ? gli_mainwin->line_request_uni : -1,
+        (void*)gli_mainwin);
+
+    /* Check if there is a pending 8-bit line request on the main window */
     if (gli_mainwin && gli_mainwin->line_request) {
         window_t *win = gli_mainwin;
+
+        fprintf(stderr, "DEBUG glk_select: 8-bit input, buf=%p buflen=%u\n",
+            win->linebuf, win->linebuflen);
 
         /* Read one line from stdin into the game-supplied buffer */
         uint16_t len = nextglk_read_line(
             (char *)win->linebuf,
             (uint16_t)(win->linebuflen > 0 ? win->linebuflen : 0));
+
+        fprintf(stderr, "DEBUG glk_select: read %u chars\n", (unsigned)len);
 
         /* Populate the event */
         event->type = evtype_LineInput;
@@ -323,7 +315,65 @@ void glk_select(event_t *event)
         return;
     }
 
+    /* Check if there is a pending Unicode line request on the main window */
+    if (gli_mainwin && gli_mainwin->line_request_uni) {
+        window_t *win = gli_mainwin;
+        glui32 *ubuf = (glui32 *)win->linebuf;
+        glui32 maxchars = (win->linebuflen > 0)
+            ? (win->linebuflen / sizeof(glui32)) : 0;
+        glui32 count = 0;
+
+        fprintf(stderr, "DEBUG glk_select: UNI input, buf=%p maxchars=%u\n",
+            (void*)ubuf, maxchars);
+
+        if (ubuf && maxchars > 0) {
+            /* Read one character at a time from stdin.
+             * Per the Unicode Policy, only ASCII characters are
+             * rendered; non-ASCII maps to '?'. */
+            int ch;
+            while (count < maxchars - 1) {
+                ch = getchar();
+                if (ch == EOF || ch == '\n' || ch == '\r')
+                    break;
+                if (ch >= 0 && ch <= 0x7F)
+                    ubuf[count] = (glui32)ch;
+                else
+                    ubuf[count] = (glui32)'?';
+                count++;
+            }
+            ubuf[count] = 0;
+
+            /* Consume remaining characters up to newline */
+            if (ch != EOF && ch != '\n' && ch != '\r') {
+                while ((ch = getchar()) != EOF && ch != '\n' && ch != '\r')
+                    ;
+            }
+        }
+
+        fprintf(stderr, "DEBUG glk_select: UNI read %u chars\n", count);
+
+        /* Populate the event */
+        event->type = evtype_LineInput;
+        event->win = (winid_t)win;
+        event->val1 = count;
+        event->val2 = 0;
+
+        /* Unregister the array with the dispatch layer so it writes
+         * the input back to VM memory and frees the retained copy. */
+        if (gli_unregister_arr && ubuf) {
+            (*gli_unregister_arr)(win->linebuf, win->linebuflen,
+                "&+#!Iu", win->inarrayrock);
+        }
+
+        /* Clear the pending request and release the buffer reference */
+        win->line_request_uni = 0;
+        win->linebuf = NULL;
+        win->linebuflen = 0;
+        return;
+    }
+
     /* No pending request — return evtype_None */
+    fprintf(stderr, "DEBUG glk_select: returning evtype_None\n");
     event->type = evtype_None;
     event->win = NULL;
     event->val1 = 0;
@@ -1014,6 +1064,9 @@ void glk_request_line_event(winid_t win, char *buf, glui32 maxlen,
 {
     window_t *winptr = (window_t *)win;
 
+    fprintf(stderr, "DEBUG req_line_event(8-bit): win=%p buf=%p maxlen=%u initlen=%u\n",
+        (void*)win, (void*)buf, maxlen, initlen);
+
     if (!winptr)
         return;
 
@@ -1028,6 +1081,9 @@ void glk_request_line_event(winid_t win, char *buf, glui32 maxlen,
     if (gli_register_arr) {
         winptr->inarrayrock = (*gli_register_arr)(buf, maxlen, "&+#!Cn");
     }
+
+    fprintf(stderr, "DEBUG req_line_event(8-bit): done, line_request=%d\n",
+        winptr->line_request);
 }
 
 /* -------------------------------------------------------------------------
