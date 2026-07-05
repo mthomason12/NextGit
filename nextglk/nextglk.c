@@ -112,8 +112,12 @@ gidispatch_rock_t gidispatch_get_objrock(void *obj, glui32 objclass)
     /* Match CheapGlk: disprock is the first field in every Glk struct,
        so a direct cast returns it. */
     switch (objclass) {
-        case gidisp_Class_Window:
-            return ((window_t *)obj)->disprock;
+        case gidisp_Class_Window: {
+            gidispatch_rock_t r = ((window_t *)obj)->disprock;
+            fprintf(stderr, "OBJROCK_GET_WINDOW: obj=%p disprock.ptr=%p disprock.num=%u\n",
+                obj, r.ptr, r.num);
+            return r;
+        }
         case gidisp_Class_Stream:
             return ((stream_t *)obj)->disprock;
         case gidisp_Class_Fileref:

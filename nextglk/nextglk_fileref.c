@@ -27,6 +27,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "glk.h"
+#include "nextglk.h"
 #include "nextglk_internal.h"
 
 #include <stdio.h>
@@ -407,8 +408,24 @@ frefid_t glk_fileref_create_temp(glui32 usage, glui32 rock)
 frefid_t glk_fileref_create_by_prompt(glui32 usage, glui32 fmode, glui32 rock)
 {
     const char *fixed_name;
+    char discard[256];
 
     (void)fmode; /* accepted but ignored — no interactive prompt */
+
+    /*
+     * The ZX Spectrum Next does not support interactive prompts for
+     * filenames.  However, the Glk ABI requires that the function
+     * consume the filename line from the input stream before returning.
+     *
+     * If we do not consume the pending input, the filename leaks into
+     * the next glk_select() call and is interpreted as a game command,
+     * which causes the VM to enter an infinite evtype_None loop after
+     * save.
+     *
+     * We read and discard one line from stdin to match the behaviour
+     * of CheapGlk's implementation (which uses fgets() + prompt).
+     */
+    nextglk_read_line(discard, sizeof(discard));
 
     fixed_name = fixed_name_for_prompt(usage);
     if (!fixed_name)

@@ -79,6 +79,9 @@ window_t *gli_new_window(glui32 rock)
     if (gli_register_obj)
         win->disprock = (*gli_register_obj)(win, gidisp_Class_Window);
 
+    fprintf(stderr, "WINDOW_REG: win=%p disprock.ptr=%p disprock.num=%u\n",
+        (void*)win, win->disprock.ptr, win->disprock.num);
+
     /* Set as the single main window */
     gli_mainwin = win;
 
