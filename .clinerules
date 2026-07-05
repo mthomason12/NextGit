@@ -18,39 +18,17 @@ It is based on:
 
 ## Building
 
-Git Build Rules
-
-The Git Makefile still defaults to:
-
-    GLK=cheapglk
-
-Any build, clean, rebuild, or validation step involving
-thirdparty/git MUST use:
-
-    GLK=nextglk
-    GLKINCLUDEDIR=../../nextglk
-    GLKLIBDIR=../../nextglk
-
-Examples:
-
-    make \
-        GLK=nextglk \
-        GLKINCLUDEDIR=../../nextglk \
-        GLKLIBDIR=../../nextglk \
-        clean
-
-    make \
-        GLK=nextglk \
-        GLKINCLUDEDIR=../../nextglk \
-        GLKLIBDIR=../../nextglk \
-        OPTIONS="-DUSE_MMAP"
-
-Never instruct the user to run:
+Never use
 
     make
     make clean
 
-inside thirdparty/git without these overrides.
+use the scripts in the root of the project 
+- rebuild-cheapglk.ps1 builds "gitc" against cheapglk
+- rebuild-nextglk.ps1 builds "gitn" against nextglk
+
+cheapglk is just for compatibility checks, our production target is nextglk 
+
 
 The default Git Makefile configuration still targets CheapGlk.
 
