@@ -30,7 +30,7 @@ try {
         GLK=nextglk `
         GLKINCLUDEDIR=../../nextglk `
         GLKLIBDIR=../../nextglk `
-        OPTIONS="-DUSE_MMAP"
+        OPTIONS="-DUSE_MMAP -Os -s"
 
     mv git gitn
 }
