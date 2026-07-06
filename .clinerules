@@ -1,44 +1,69 @@
 # NextGit Project Rules
 
+Firstly, BE INTERACTIVE. Do not spend excessive time thinking about things when you can simply ask the human.  The human is bored and wants to do something too, rather than leave you running for hours doing all the thinking.
+
 ## Project Overview
 
 NextGit is a Glulx interpreter for the ZX Spectrum Next.
 
 It is based on:
+
 - Git (Glulx interpreter)
 - A custom Glk implementation called NextGlk
 
 ## Structure
 
 /docs - Documentation
-/nextglk - implementation
-/tests - tests
-/thirdparty - third party code used as references, you don't need to look here unless asked to
-
+/nextglk - Implementation
+/tests - Tests
+/thirdparty - Third-party code used as references. Do not inspect unless explicitly required.
 
 ## Building
 
-Never use
+Never use:
 
     make
     make clean
 
-use the scripts in the root of the project 
-- rebuild-cheapglk.ps1 builds "gitc" against cheapglk
-- rebuild-nextglk.ps1 builds "gitn" against nextglk
+Always use the build scripts in the repository root.
 
-cheapglk is just for compatibility checks, our production target is nextglk 
+Available scripts:
 
+    rebuild-cheapglk.ps1
+
+Builds:
+
+    gitc
+
+against CheapGlk.
+
+Available scripts:
+
+    rebuild-nextglk.ps1
+
+Builds:
+
+    gitn
+
+against NextGlk.
+
+CheapGlk exists for compatibility verification.
+
+NextGlk is the production target.
 
 The default Git Makefile configuration still targets CheapGlk.
 
 ## Architecture
 
 Game
-  -> Git VM
-  -> Glk ABI
-  -> NextGlk
-  -> Spectrum Next platform
+    ->
+Git VM
+    ->
+Glk ABI
+    ->
+NextGlk
+    ->
+Spectrum Next Platform
 
 Git must remain as close to upstream as possible.
 
@@ -46,18 +71,98 @@ Do not modify Git VM behaviour unless explicitly requested.
 
 Prefer implementing missing functionality in NextGlk.
 
+## CheapGlk Compatibility Policy
+
+CheapGlk is the behavioural reference implementation.
+
+When debugging:
+
+    CheapGlk wins unless there is a proven reason not to.
+
+Do not assume:
+
+    "The specification probably means..."
+
+when CheapGlk demonstrates actual behaviour.
+
+The preferred debugging workflow is:
+
+    Bug
+        ->
+    Run same scenario on CheapGlk
+        ->
+    Run same scenario on NextGlk
+        ->
+    Identify first behavioural divergence
+        ->
+    Create test
+        ->
+    Fix divergence
+        ->
+    Re-test
+
+Do NOT begin with:
+
+    architectural theories
+    root-cause analysis
+    speculative logging
+
+Begin with:
+
+    behavioural comparison
+
+The key question is:
+
+    "What does CheapGlk do?"
+
+not:
+
+    "What do we think should happen?"
+
 ## Platform
 
 Target:
+
 - ZX Spectrum Next
 - z88dk
 - NextZXOS
 - SD card storage
 
 Optional:
+
 - Raspberry Pi acceleration
 
-The interpreter must function without the Raspberry Pi.
+The interpreter must function without Raspberry Pi acceleration.
+
+## Linux vs Spectrum Next Rules
+
+ZX Spectrum Next behaviour is the target behaviour.
+
+Linux exists to make Spectrum Next development and testing practical.
+
+Linux and Spectrum Next must behave identically whenever possible.
+
+If the Spectrum Next implementation requires a workaround:
+
+    use the same workaround on Linux
+
+unless there is a proven technical reason not to.
+
+Do not introduce:
+
+    Linux-only behaviour
+
+Do not introduce:
+
+    Spectrum-only behaviour
+
+unless required by hardware limitations.
+
+If a feature cannot realistically exist on the Spectrum Next:
+
+    do not implement it on Linux.
+
+Testing is only useful when both platforms behave the same.
 
 ## Glk
 
@@ -66,6 +171,7 @@ NextGlk is a genuine Glk implementation.
 Do not create alternative abstraction layers.
 
 Use:
+
 - glk.h
 - gi_dispa.c
 - gi_dispa.h
@@ -77,10 +183,12 @@ as the ABI contract.
 Do not implement memory banking inside NextGlk.
 
 Memory banking belongs to:
+
 - VM memory manager
 - Story memory subsystem
 
 NextGlk owns:
+
 - UI state
 - Image cache
 - Platform I/O
@@ -88,11 +196,13 @@ NextGlk owns:
 ## Graphics
 
 Games use:
+
 - Inform 7
 - Glulx
 - Inline images
 
 Current requirements:
+
 - Inline image display
 - No sound
 
@@ -109,36 +219,93 @@ Initial UI layout:
 ## Coding Rules
 
 Always provide:
-- complete files
-- complete functions
+
+- Complete files
+- Complete functions
 
 Never provide:
-- partial snippets
-- search-and-replace instructions
-- "insert here" guidance
+
+- Partial snippets
+- Search-and-replace instructions
+- "Insert here" guidance
 
 When generating code:
-- compileable first
-- functional later
+
+- Compilable first
+- Functional second
 
 Stub implementations are acceptable if clearly marked.
 
 ## Development Strategy
 
-1. Match Glk ABI.
-2. Build compileable stubs.
-3. Replace stubs incrementally.
-4. Keep commits small.
-5. Prefer understanding over implementation.
+1. ZX Spectrum Next is the target platform.
+2. Linux exists only as a development platform.
+3. Linux and Spectrum Next behaviour must remain identical whenever possible.
+4. Behavioural compatibility is more important than architectural elegance.
+5. CheapGlk is the behavioural reference implementation.
+6. If CheapGlk and NextGlk behave differently, assume NextGlk is wrong until proven otherwise.
+7. Prefer executable tests over theoretical analysis.
+8. Prefer compatibility tests over extensive logging.
+9. Prefer behavioural comparison over architectural reasoning.
+10. Keep commits small.
+11. Create tests for discovered divergences.
+12. Fix divergences before investigating downstream symptoms.
+
+## Investigation Rules
+
+When debugging:
+
+1. Reproduce the problem.
+2. Run the same scenario on CheapGlk.
+3. Run the same scenario on NextGlk.
+4. Identify the first behavioural divergence.
+5. Create a compatibility test.
+6. Fix the divergence.
+7. Re-test.
+
+Do not spend extended periods investigating theories before locating a behavioural divergence.
+
+Good investigation output:
+
+    CheapGlk:
+        X
+
+    NextGlk:
+        Y
+
+    First divergence:
+        Function Z
+
+Bad investigation output:
+
+    Maybe...
+    Perhaps...
+    Theoretically...
+    We think...
+
+Do not continue tracing once the first behavioural divergence has been identified.
+
+Fix the divergence first.
+
+Only continue if the problem remains.
 
 ## Documentation
 
-Before implementing a subsystem:
-- identify ABI
-- identify ownership
-- document architecture
+Prefer:
 
-Prefer documentation before code.
+    behavioural tests
+
+before:
+
+    root-cause analysis
+
+Prefer:
+
+    documentation
+
+before:
+
+    significant architectural changes
 
 ## Current Status (July 2026)
 
@@ -168,47 +335,52 @@ Prefer documentation before code.
 - First command executes successfully
 - Complex game (LOTR Adventure) plays correctly
 - Commands such as:
-  - look
-  - inventory
-  - movement
-  - take
-  - custom verbs
+    - look
+    - inventory
+    - movement
+    - take
+    - custom verbs
 
   are functioning
 
 ### Current Runtime Gaps
 
 Save:
-- Fails
+
+- In progress
 
 Restore:
-- Fails
+
+- In progress
 
 Transcript:
+
 - Fails
 
 Images:
+
 - Placeholder output only
 - Image display not implemented
 
 Sound:
+
 - Not implemented
 
 ### Current Development Priority
 
 Priority 1:
+
 - Save support
+- Restore support
 - Transcript support
 
 Priority 2:
-- Restore support
 
-Priority 3:
 - Image display
 
-Priority 4:
-- Remaining optional Glk functionality
+Priority 3:
 
+- Remaining optional Glk functionality
 
 ## Unicode Policy
 
@@ -225,16 +397,19 @@ Unicode support is implemented as:
 
 Allowed implementation:
 
-    U+0000–U+007F  -> render normally
-    U+0080+        -> '?'
+    U+0000–U+007F -> render normally
+    U+0080+       -> '?'
 
 The Unicode APIs must exist and compile.
 
 Full Unicode rendering is explicitly out of scope for the initial implementation.
 
 Do not remove Unicode APIs from the Glk ABI.
+
 Do not change glk.h.
+
 Do not remove GLK_MODULE_UNICODE.
+
 Prefer stub implementations over API removal.
 
 ## Inform 7 Content Policy
@@ -243,40 +418,47 @@ Target games are expected to be ASCII-compatible.
 
 Before implementing full Unicode support:
 
-- Verify the target game content.
+- Verify target game content.
 - Verify generated Inform 7 output.
 - Verify Blorb metadata.
 
-If the target game is ASCII-only:
+If the target game content is ASCII-only:
 
 - Unicode APIs remain implemented.
 - Unicode rendering remains simplified.
 - Non-ASCII output may be replaced with '?'.
 
-Do not implement full Unicode rendering unless a real game requirement is identified.
+Do not implement full Unicode rendering unless required by a real game.
 
 ## 8-bit Portability Notes
 
-The Linux implementation is currently the reference implementation.
+Spectrum Next behaviour is the target.
 
-Feature correctness takes priority over Spectrum Next optimisation.
+Linux exists to support development and testing.
+
+Feature correctness is important.
+
+Behavioural compatibility with CheapGlk is more important.
 
 When implementing new functionality:
 
-- Prefer correctness first.
-- Prefer compatibility second.
+- Prefer compatibility first.
+- Prefer correctness second.
 - Prefer optimisation last.
 
-However:
+Whenever potential Spectrum Next or z88dk issues are identified:
 
-Whenever you identify potential Spectrum Next or z88dk issues:
+Record them in:
 
-- Record them in docs/8bit-portability-notes.md.
-- Do not immediately redesign working code.
-- Do not block feature implementation.
-- Do not introduce premature optimisation.
+    docs/8bit-portability-notes.md
 
-Examples to record:
+Do not redesign working functionality immediately.
+
+Do not block implementation.
+
+Do not optimise prematurely.
+
+Examples:
 
 - Large stack allocations
 - Excessive malloc/free usage
@@ -285,9 +467,9 @@ Examples to record:
 - File seek assumptions
 - Host OS dependencies
 - POSIX-specific APIs
-- stdio behaviours that may differ on NextZXOS
+- stdio behavioural assumptions
 
-Each note must include:
+Each note should include:
 
 - Location
 - Description
@@ -296,19 +478,17 @@ Each note must include:
 
 The portability notes document is an observation log, not a task list.
 
-Do not rewrite working functionality solely for 8-bit compatibility unless explicitly requested.
-
 ## Spectrum Next Memory Budget
 
-The Linux build is the reference implementation.
+The Linux build is the development platform.
 
-However, all new features should record potential memory impacts.
+However all features should record memory implications.
 
-When evaluating a feature, consider:
+Consider:
 
 - VM memory usage
 - Game object counts
-- Save file buffers
+- Save buffers
 - Transcript buffers
 - Image cache usage
 - Resource loading behaviour
@@ -320,27 +500,17 @@ Large Inform 7 games may contain:
 - Large parser tables
 - Large text resources
 
-The Spectrum Next target has a practical memory budget of approximately 1.7 MB.
+Practical Spectrum Next memory budget:
+
+    ~1.7 MB
 
 Do not optimise prematurely.
 
-However:
-
-Whenever a subsystem could significantly increase memory usage, create an entry in:
-
-    docs/8bit-portability-notes.md
-
-including:
-
-- subsystem
-- estimated memory impact
-- current Linux behaviour
-- likely Spectrum Next concern
-- possible future mitigation
+Record concerns first.
 
 ## 8-bit Portability Tracking
 
-For all code generated:
+For all generated code:
 
 Add entries to:
 
@@ -365,4 +535,5 @@ Record:
 - potential future mitigation
 
 Do not redesign working code solely for portability.
+
 Record concerns first.
