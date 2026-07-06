@@ -1,47 +1,24 @@
-/* glkstart.c: Unix-specific startup code for NextGlk.
- *
- * Provides the glkunix_* interface required by git_unix.c.
- * See docs/integration-attempt-1.md §3a for the required symbols.
- *
- * This is a minimal implementation:
- *   - glkunix_startup_code() and glkunix_arguments[] are provided by
- *     git_unix.c (the Git VM's startup routine). This file only provides
- *     stubs for glkunix_stream_open_pathname*() and
- *     glkunix_set_base_file().
- *
- * With -DUSE_MMAP, these stubs are never called (the MMAP path opens
- * the game file directly via open()/mmap()), so glkstart.o will not
- * be pulled from the archive at link time.
- */
+/* glkstart.c: Unix-specific startup code -- sample file.
+    Designed by Andrew Plotkin <erkyrath@eblong.com>
+    http://www.eblong.com/zarf/glk/index.html
+
+    This is Unix startup code for the simplest possible kind of Glk
+    program -- no command-line arguments; no startup files; no nothing.
+
+    Remember, this is a sample file. You should copy it into the Glk
+    program you are compiling, and modify it to your needs. This should
+    *not* be compiled into the Glk library itself.
+*/
 
 #include "glk.h"
 #include "glkstart.h"
 
-void glkunix_set_base_file(char *filename)
+glkunix_argumentlist_t glkunix_arguments[] = {
+    { NULL, glkunix_arg_End, NULL }
+};
+
+int glkunix_startup_code(glkunix_startup_t *data)
 {
-    (void)filename;
-    /* Stub — no base file tracking. */
+    return TRUE;
 }
 
-strid_t glkunix_stream_open_pathname_gen(char *pathname,
-    glui32 writemode, glui32 textmode, glui32 rock)
-{
-    (void)pathname;
-    (void)writemode;
-    (void)textmode;
-    (void)rock;
-
-    /* Stub — returns NULL. Git uses MMAP path, so this is not called. */
-    return NULL;
-}
-
-strid_t glkunix_stream_open_pathname(char *pathname, glui32 textmode,
-    glui32 rock)
-{
-    (void)pathname;
-    (void)textmode;
-    (void)rock;
-
-    /* Stub — returns NULL. Git uses MMAP path, so this is not called. */
-    return NULL;
-}

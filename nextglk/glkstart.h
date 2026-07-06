@@ -1,17 +1,23 @@
-/* glkstart.h: Unix-specific header file for NextGlk.
- * 
- * This header defines the Unix startup interface expected by 
- * programs linked with NextGlk (notably Git). It mirrors the
- * interface from CheapGlk/GlkTerm/XGlk.
- *
- * See docs/integration-attempt-1.md §3a for the required symbols.
- */
+/* glkstart.h: Unix-specific header file for GlkTerm, CheapGlk, and XGlk
+        (Unix implementations of the Glk API).
+    Designed by Andrew Plotkin <erkyrath@eblong.com>
+    http://www.eblong.com/zarf/glk/index.html
+*/
 
-#ifndef NEXTGLK_START_H
-#define NEXTGLK_START_H
+/* This header defines an interface that must be used by program linked
+    with the various Unix Glk libraries -- at least, the three I wrote.
+    (I encourage anyone writing a Unix Glk library to use this interface,
+    but it's not part of the Glk spec.)
+    
+    Because Glk is *almost* perfectly portable, this interface *almost*
+    doesn't have to exist. In practice, it's small.
+*/
+
+#ifndef GT_START_H
+#define GT_START_H
 
 /* We define our own TRUE and FALSE and NULL, because ANSI
- * is a strange world. */
+    is a strange world. */
 #ifndef TRUE
 #define TRUE 1
 #endif
@@ -49,4 +55,5 @@ extern strid_t glkunix_stream_open_pathname_gen(char *pathname,
 extern strid_t glkunix_stream_open_pathname(char *pathname, glui32 textmode, 
     glui32 rock);
 
-#endif /* NEXTGLK_START_H */
+#endif /* GT_START_H */
+

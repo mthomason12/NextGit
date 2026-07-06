@@ -1,72 +1,49 @@
-CC ?= cc
+# Makefile for NextGlk library (derived from CheapGlk)
+#
+# Two targets:
+#   make          - Linux build with cc
+#   make specnext - ZX Spectrum Next build with z88dk/zcc
 
-CFLAGS += -Wall -Wextra -std=c99
+# Pick a C compiler for Linux
+CC = cc
+OPTIONS = -g -Wall
 
-OBJS = \
-	nextglk.o \
-	nextglk_screen.o \
-	nextglk_input.o \
-	nextglk_file.o \
-	nextglk_image.o \
-	nextglk_fileref.o \
-	nextglk_platform.o \
-	nextglk_stubs.o \
-	next_stream.o \
-	next_window.o \
-	gi_dispa.o \
-	gi_blorb.o \
-	glkstart.o \
-	main.o
+CFLAGS = $(OPTIONS) $(INCLUDEDIRS)
 
-all: libnextglk.a
+GLKLIB = libcheapglk.a
 
-libnextglk.a: $(OBJS)
-	ar rcs $@ $(OBJS)
+CHEAPGLK_OBJS =  \
+  cgfref.o cggestal.o cgmisc.o cgstream.o cgstyle.o cgwindow.o cgschan.o \
+  cgdate.o cgunicod.o main.o gi_dispa.o gi_blorb.o gi_debug.o cgblorb.o
 
-test: libnextglk.a
-	$(CC) $(CFLAGS) -I. -o test_stream ../tests/test_stream_main.c \
-		../tests/stream_tests.c -L. -lnextglk -lm
-	./test_stream
+CHEAPGLK_HEADERS = cheapglk.h gi_dispa.h gi_debug.h
 
-test_window: libnextglk.a
-	$(CC) $(CFLAGS) -I. -o test_window ../tests/test_window_main.c \
-		../tests/window_tests.c -L. -lnextglk -lm
-	./test_window
+all: $(GLKLIB) Make.cheapglk
 
-test_dispatch: libnextglk.a
-	$(CC) $(CFLAGS) -I. -o test_dispatch ../tests/test_main.c \
-		../tests/stream_tests.c ../tests/window_tests.c \
-		../tests/dispatch_tests.c \
-		../tests/fileio_tests.c \
-		-L. -lnextglk -lm
-	./test_dispatch
+cgunicod.o: cgunigen.c
 
-test_input: libnextglk.a
-	$(CC) $(CFLAGS) -I. -o test_input ../tests/test_main.c \
-		../tests/stream_tests.c ../tests/window_tests.c \
-		../tests/dispatch_tests.c ../tests/stream_output_tests.c \
-		../tests/glk_output_tests.c ../tests/input_tests.c \
-		../tests/fileio_tests.c \
-		-L. -lnextglk -lm
-	./test_input
+$(GLKLIB): $(CHEAPGLK_OBJS)
+	ar r $(GLKLIB) $(CHEAPGLK_OBJS)
+	ranlib $(GLKLIB)
 
-test_fileio: libnextglk.a
-	$(CC) $(CFLAGS) -I. -o test_fileio ../tests/test_main.c \
-		../tests/stream_tests.c ../tests/window_tests.c \
-		../tests/dispatch_tests.c ../tests/stream_output_tests.c \
-		../tests/glk_output_tests.c ../tests/input_tests.c \
-		../tests/fileio_tests.c \
-		-L. -lnextglk -lm
-	./test_fileio
+Make.cheapglk:
+	echo LINKLIBS = $(LIBDIRS) $(LIBS) > Make.cheapglk
+	echo GLKLIB = -lcheapglk >> Make.cheapglk
 
-test_all: libnextglk.a
-	$(CC) $(CFLAGS) -I. -o test_all ../tests/test_main.c \
-		../tests/stream_tests.c ../tests/window_tests.c \
-		../tests/dispatch_tests.c ../tests/stream_output_tests.c \
-		../tests/glk_output_tests.c ../tests/input_tests.c \
-		../tests/fileio_tests.c ../tests/stream_read_tests.c \
-		-L. -lnextglk -lm
-	./test_all
+$(CHEAPGLK_OBJS): glk.h $(CHEAPGLK_HEADERS)
 
 clean:
-	rm -f *.o *.a test_stream test_window test_dispatch test_input test_fileio test_all
+	rm -f *~ *.o $(GLKLIB) Make.cheapglk
+
+# Spectrum Next target using z88dk
+# Compiles each source to .o, then links into a binary.
+# Uses -x to signal that we're producing an executable.
+SPECNEXT_CFLAGS = +zxn -O2 -D__SPECTRUM_NEXT__
+
+specnext: $(CHEAPGLK_OBJS:.o=_next.o)
+	@echo "=== Linking NextGlk for ZX Spectrum Next ==="
+	zcc $(SPECNEXT_CFLAGS) -x -o gitn.bin $(CHEAPGLK_OBJS:.o=_next.o)
+	@echo "=== Spectrum Next build complete ==="
+
+%_next.o: %.c glk.h $(CHEAPGLK_HEADERS) cgunigen.c
+	zcc $(SPECNEXT_CFLAGS) -c -o $@ $<

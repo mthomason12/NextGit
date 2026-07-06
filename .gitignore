@@ -40,5 +40,6 @@ TestGame/*/*skein
 
 NextGlk/*.glkdata
 /nextgit.sav
+*.glksave
 *.log
 
